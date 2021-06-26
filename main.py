@@ -28,16 +28,17 @@ device = torch.device("cpu")
 BATCH_SIZE = 64
 GAMMA = 0.9
 
-TARGET_UPDATE = 150
+TARGET_UPDATE = 50
 MEMORY_THRESHOLD = 10000
-MEMORY_GREEDY_EXAMPLES = MEMORY_THRESHOLD // 2000
-N_EPISODES_TRAIN = 50000
+MEMORY_GREEDY_EXAMPLES = MEMORY_THRESHOLD // 3
+N_EPISODES_TRAIN = 4000
 N_ACTIONS = 4
 COLLECT_FROM_POLICY_NUM = 3
 EVALUATE_FROM_POLICY_NUM = 3
 
 EPS_START = 0.85
 EPS_END = 0.05
+
 
 policy_net = DQN(*get_features_params(env.configuration),
                  kernel_size=3,
@@ -201,7 +202,7 @@ def collect_greedy_data(k, get_state, eps=0.25):
     player = GreedyAgent(None, get_state, device, eps)
     trainer = env.train([None] + ['greedy'] * 3)
     configuration = Configuration(env.configuration)
-    for ii in tqdm(range(k), desc='Episode', leave=False):
+    for ii in tqdm(range(k), desc='Collecting greedy experience', leave=False):
         observation = Observation(trainer.reset())
         prev_obs = observation
         done = False
@@ -245,11 +246,9 @@ def train(n_episodes=N_EPISODES_TRAIN):
     win_rates = {'Score': [], 'Rank': []}
     get_state = get_features
     adjust_action = None
-    print('\n-Collect greedy examples')
     collect_greedy_data(MEMORY_GREEDY_EXAMPLES, get_state, eps=0.35)
 
-    print('\n-Start Training')
-    for episode in tqdm(range(n_episodes), desc='Episode', leave=False):
+    for episode in tqdm(range(n_episodes), desc='Training', leave=False):
         # update statistics
         target_net.eval()
         player = RLAgent(policy_net, get_state, device, get_eps(EPS_START, EPS_END, episode, n_episodes), adjust_action)
@@ -269,7 +268,12 @@ def train(n_episodes=N_EPISODES_TRAIN):
 
         # save best agent so far
         if last_saved_score < evaluated_score:
-            result_net.load_state_dict(policy_net.state_dict())
+            # check again whether it plays well
+            scores = evaluate("hungry_geese", [player] + players, num_episodes=EVALUATE_FROM_POLICY_NUM, debug=False)
+            second_evaluation_score = np.mean([r[0] for r in scores])
+            if last_saved_score < second_evaluation_score:
+                result_net.load_state_dict(policy_net.state_dict())
+                last_saved_score = second_evaluation_score
 
     return win_rates
 

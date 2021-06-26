@@ -1,18 +1,25 @@
 import torch
 
 from dqn import DQN
-from feature_proc import get_square_features_params, get_square_features
+from feature_proc import get_square_features_params, get_square_features, get_features, get_features_params, get_action_rotated_north_head
 from goose_agents import RLAgent
 from kaggle_environments import make
 
-env = make("hungry_geese", debug=False)
+env = make("hungry_geese", debug=True)
 env.reset()
 
-get_state = get_square_features
+# get_state = get_square_features
+# adjust_action = get_action_rotated_north_head
+# get_params = get_square_features_params
+
+
+get_state = get_features
 adjust_action = None
+get_params = get_features_params
+
 
 device = torch.device("cpu")
-net = DQN(*get_square_features_params(env.configuration),
+net = DQN(*get_params(env.configuration),
                  kernel_size=3,
                  stride=1,
                  padding=1,
@@ -22,12 +29,11 @@ net = DQN(*get_square_features_params(env.configuration),
 
 net.load_state_dict(torch.load("./results/5x5_DQN.net"))
 net.eval()
-players = [RLAgent(net, device, get_state, 0, adjust_action),
-         RLAgent(net, device, get_state, 0, adjust_action),
-         RLAgent(net, device, get_state, 0, adjust_action)]
+players = [RLAgent(net, get_state, device, 0, adjust_action),
+         RLAgent(net, get_state, device, 0, adjust_action),
+         RLAgent(net, get_state, device, 0, adjust_action)]
 
-players = ['greedy']*3
-env.run([RLAgent(net, device, get_state, 0, adjust_action)] + players)
+env.run([RLAgent(net, get_state,  device, 0, adjust_action)] + players)
 out = env.render(mode="html", width=500, height=400)
 
 f = open("game.html", "w")

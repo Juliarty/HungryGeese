@@ -36,9 +36,8 @@ def get_eps(start_value, end_value, step, episodes):
 def get_reward(prev_obs, observation: Observation, configuration: Configuration, device):
     reward = 0
     index = observation.index
-    if len(observation.geese[index]) == len(prev_obs.geese[index]) and len(observation.geese[index]) < 10:
-        reward = -0.1
-    elif len(observation.geese[index]) > len(prev_obs.geese[index]):     # ate sth
+
+    if len(observation.geese[index]) > len(prev_obs.geese[index]):     # ate sth
         reward = len(observation.geese[index]) * 1.5
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) >= 2:  # died like a hero
         reward = -1 * get_eps(10, 1, observation.step, configuration.episode_steps)
@@ -92,7 +91,7 @@ def get_distance(x1, x2, max_coord):
 # нумерация всех id начинается с левого верхнего угла
 # ось координат расположена там же,  т.е. центр будет с координатами (5, 3) при rows, columns = 7, 11
 # необходимо отрезать все, что дальше центра больше чем на 3 окошка
-def transform_to_central_square_ids(ids, center_id, rows, columns, square_side):
+def transform_to_central_square_ids(ids, center_id, rows, columns, square_side, squeeze_picture=False):
     new_ids = []
     max_dist = (square_side + 1) // 2
     center_y, center_x = get_position_from_index(center_id, columns)
@@ -105,11 +104,16 @@ def transform_to_central_square_ids(ids, center_id, rows, columns, square_side):
 
         # так как мир круглый, нужно смотреть расстояния в обе стороны осей
         dist_y = get_distance(el_y, center_y, rows)
-        dist_x =  get_distance(el_x, center_x, columns)
+        dist_x = get_distance(el_x, center_x, columns)
 
         # пропускаем все элементы расположенные слишком далеко
         if dist_x >= max_dist or dist_y >= max_dist:
-            continue
+            if squeeze_picture is False:
+                continue
+            else:
+                el_x = (center_x + np.sign(el_x - center_x) * (max_dist - 1)) % columns if dist_x >= max_dist else el_x
+                el_y = (center_y + np.sign(el_y - center_y) * (max_dist - 1)) % rows if dist_y >= max_dist else el_y
+                ids[i] = get_index_from_position(el_y, el_x, columns)
         # сдвигаем так, чтобы ось была в левом верхнем углу нового квадрата, где элемент с center_id в центре
         new_y, new_x = shifted_element_y_x(ids[i], corner_x, corner_y, rows, columns)
         new_ids.append(get_index_from_position(new_y, new_x, square_side))
@@ -123,11 +127,11 @@ def transform_to_rows_x_rows(observation: Observation, prev_heads, rows, columns
     head_id = observation.geese[index][0]
 
     if prev_heads != [-1, -1, -1, -1]:
-        prev_heads = transform_to_central_square_ids(prev_heads, head_id, rows, columns, rows)
+        prev_heads = transform_to_central_square_ids(prev_heads, head_id, rows, columns, rows, squeeze_picture=True)
     # put the goose head into the center
     for i in range(len(observation.geese)):
         observation.geese[i] = transform_to_central_square_ids(observation.geese[i], head_id, rows, columns, rows)
-    observation['food'] = transform_to_central_square_ids(observation.food, head_id, rows, columns, rows)
+    observation['food'] = transform_to_central_square_ids(observation.food, head_id, rows, columns, rows, squeeze_picture=True)
 
     return observation, prev_heads
 
