@@ -1,7 +1,10 @@
-from collections import namedtuple, deque
+from collections import namedtuple
 import random
-import queue
 import numpy
+import torch
+import numpy as np
+import math
+from goose_tools import get_eps
 
 
 # SumTree
@@ -79,7 +82,6 @@ class SumTree:
         return (idx, self.data[dataIdx], self.tree[idx])
 
 
-
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
@@ -89,25 +91,70 @@ class ReplayMemory(object):
     def __init__(self, capacity):
         # self.memory = deque([], maxlen=capacity)
         # self.memory = queue.PriorityQueue(capacity)
-        self.memory = SumTree(capacity)
+        self.sum_tree = SumTree(capacity)
+        self.capacity = capacity
 
     def push(self, priority, *args):
         """Save a transition"""
-        self.memory.add(priority, Transition(*args))
+        self.sum_tree.add(priority, Transition(*args))
 
     def get(self, batch_size):
-        if self.memory.n_entries == 0:
+        if self.sum_tree.n_entries == 0:
             return None
 
         sample = []
         for i in range(batch_size):
-            s = random.random() * self.memory.total()
-            sample.append(self.memory.get(s))
+            s = random.random() * self.sum_tree.total()
+            sample.append(self.sum_tree.get(s))
 
         return sample
 
     def update(self, idx, p):
-        self.memory.update(idx, p)
+        self.sum_tree.update(idx, p)
 
     def __len__(self):
-        return self.memory.n_entries
+        return self.sum_tree.n_entries
+
+
+def get_max_annealing_parameter(replay_memory, step, max_step):
+    return annealing_parameter(replay_memory, replay_memory.sum_tree.min_priority,
+                               step, max_step)
+
+
+def annealing_parameter(replay_memory, priority, step, max_step):
+    N = len(replay_memory)
+    beta = get_eps(0.2, 1, step, max_step)
+    prob = priority / replay_memory.sum_tree.total()
+
+    omega = math.pow(1 / N / prob, beta)
+
+    return omega
+
+
+def update_priorities(idx_list, priorities, memory):
+    for i in range(len(idx_list)):
+        memory.update(idx_list[i], priorities[i])
+
+
+def calculate_priority(reward, prev_state, state, action, target, policy, gamma):
+    # R_j + gamma_j * Q_target(S_j, argmax_a(S_j, a)) - Q(S_{j - 1}, A_{j - 1})
+    with torch.no_grad():
+        q1 = policy(prev_state.unsqueeze(0)).squeeze(0)[action]
+        q2 = reward + gamma * np.argmax(target(state.unsqueeze(0)).squeeze(0)) if state is not None else reward
+        return np.abs(q2 - q1)
+
+
+# В оригинальной статье Prioritized Experience Replay работают с одним приоритетом и для него одного вычисляется
+# коэффициент отжига (annealing parameter), на который домнажается весь градиент
+# Здесь же попытка сделать это для батчей, просто берется среднее всех коэффициентов
+# так же подсчет максимального коэффициента отжига считается на основании минимального
+# встретившегося в памяти приоритета не на данный момент, а в течение всей работы с этой коллекцией
+def get_priority_weight(priorities, replay_memory, step, max_step):
+    max_annealing_param = get_max_annealing_parameter(replay_memory, step, max_step)
+    map_func = lambda x: \
+        math.pow(max_annealing_param, -1) * annealing_parameter(replay_memory,
+                                                                x,
+                                                                step,
+                                                                max_step)
+    weights_c = list(map(map_func, priorities))
+    return np.average(weights_c)

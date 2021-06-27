@@ -1,9 +1,10 @@
 import math
-from  kaggle_environments.envs.hungry_geese.hungry_geese import Observation, Action, Configuration, row_col
+from kaggle_environments.envs.hungry_geese.hungry_geese import Observation, Action, Configuration, row_col
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from goose_tools import get_distance, observation_copy
 
 from kaggle_environments import make
 
@@ -29,36 +30,6 @@ def get_action_rotated_north_head(obs, prev_heads, action_in_rotated_world: Acti
     return actual_action
 
 
-def get_eps(start_value, end_value, step, episodes):
-    return end_value + (start_value - end_value) * (episodes - step) / episodes
-
-
-def get_reward(prev_obs, observation: Observation, configuration: Configuration, device):
-    reward = 0
-    index = observation.index
-
-    if len(observation.geese[index]) > len(prev_obs.geese[index]):     # ate sth
-        reward = len(observation.geese[index]) * 1.5
-    elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) >= 2:  # died like a hero
-        reward = -1 * get_eps(10, 1, observation.step, configuration.episode_steps)
-    elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) == 1:  # died like a rat
-        reward = -100
-
-    if len(observation.geese[index]) > 0:
-        # check whether he lost his chance to become bigger
-        head_y, head_x = row_col(observation.geese[index][0], configuration.columns)
-        for food in observation.food:
-            food_y, food_x = row_col(food, configuration.columns)
-            dist_x = get_distance(food_x, head_x, configuration.columns)
-            dist_y = get_distance(food_y, head_y, configuration.rows)
-            if dist_y == 0 and dist_x == 1 or \
-               dist_y == 1 and dist_x == 0:
-                reward -= 2
-                break
-
-    return torch.tensor([[reward]], device=device, dtype=torch.long)
-
-
 def get_square_features(observation: Observation, prev_head, configuration: Configuration):
     new_config = Configuration(configuration.copy())
     new_config['columns'] = new_config['rows']
@@ -71,7 +42,7 @@ def get_square_features(observation: Observation, prev_head, configuration: Conf
 
 
 def shifted_element_y_x(el_id, shift_x, shift_y, rows, columns):
-    el_y, el_x = get_position_from_index(el_id, columns)
+    el_y, el_x = row_col(el_id, columns)
     new_el_y = (el_y - shift_y) % rows
     new_el_x = (el_x - shift_x) % columns
 
@@ -84,23 +55,19 @@ def shifted_element_y_x(el_id, shift_x, shift_y, rows, columns):
     return new_el_y, new_el_x
 
 
-def get_distance(x1, x2, max_coord):
-    return np.min([int(math.fabs(x1 - x2)), int(max_coord - math.fabs(x1 - x2))])
-
-
 # нумерация всех id начинается с левого верхнего угла
 # ось координат расположена там же,  т.е. центр будет с координатами (5, 3) при rows, columns = 7, 11
 # необходимо отрезать все, что дальше центра больше чем на 3 окошка
 def transform_to_central_square_ids(ids, center_id, rows, columns, square_side, squeeze_picture=False):
     new_ids = []
     max_dist = (square_side + 1) // 2
-    center_y, center_x = get_position_from_index(center_id, columns)
+    center_y, center_x = row_col(center_id, columns)
 
     corner_x = center_x - max_dist + 1
     corner_y = center_y - max_dist + 1
 
     for i in range(len(ids)):
-        el_y, el_x = get_position_from_index(ids[i], columns)
+        el_y, el_x = row_col(ids[i], columns)
 
         # так как мир круглый, нужно смотреть расстояния в обе стороны осей
         dist_y = get_distance(el_y, center_y, rows)
@@ -146,24 +113,13 @@ def rotate_ids_90(ids, rows, columns, k):
     for j in range(k):
         res = []
         for i in range(len(ids)):
-            y, x = get_position_from_index(ids[i], columns)
+            y, x = row_col(ids[i], columns)
             new_y = rows - 1 - x
             new_x = y
             res.append(get_index_from_position(new_y, new_x, columns))
         ids = res
 
     return res
-
-
-def observation_copy(observation: Observation):
-    return Observation(
-            {
-                'index': observation.index,
-                'geese': [x.copy() for x in observation.geese],
-                'step': observation.step,
-                'food': observation.food.copy(),
-                'remainingOverageTime': observation.remaining_overage_time
-            })
 
 
 def set_head_to_the_north(observation: Observation, prev_heads, configuration: Configuration):
@@ -195,12 +151,12 @@ def set_head_to_the_north(observation: Observation, prev_heads, configuration: C
 
 def get_north_head_rot_num(observation: Observation, prev_heads, rows, columns):
     index = observation.index
-    head_y, head_x = get_position_from_index(observation.geese[index][0], columns)
+    head_y, head_x = row_col(observation.geese[index][0], columns)
 
     if len(prev_heads) == 0:
         return 0
 
-    prev_head_y, prev_head_x = get_position_from_index(prev_heads[index], columns)
+    prev_head_y, prev_head_x = row_col(prev_heads[index], columns)
     rotates_num = 0
     if (head_x - prev_head_x + columns) % columns == 1:  # prev_action = 'EAST'
         rotates_num = 1
@@ -212,12 +168,6 @@ def get_north_head_rot_num(observation: Observation, prev_heads, rows, columns):
         rotates_num = 2
 
     return rotates_num
-
-
-def get_position_from_index(index, columns):
-    row = index // columns
-    col = index % columns
-    return row, col
 
 
 def get_index_from_position(row, col, columns):
@@ -237,16 +187,10 @@ def find_new_head_position(head_row, head_col, action, rows, columns):
 
 
 def shift_head(head_id, action, rows=7, columns=11):
-    head_row, head_col = get_position_from_index(head_id, columns)
+    head_row, head_col = row_col(head_id, columns)
     new_row, new_col = find_new_head_position(head_row, head_col, action, rows, columns)
     new_head_id = get_index_from_position(new_row, new_col, columns)
     return new_head_id
-
-
-def get_previous_head(ids, last_action, rows, columns):
-    if len(ids) > 1:
-        return ids[1]
-    return shift_head(ids[0], (last_action + 2) % 4, rows, columns)
 
 
 def ids2locations(ids, prev_head, step, rows, columns):
@@ -296,16 +240,6 @@ def get_features(observation: Observation, prev_heads, configuration: Configurat
     head_col = head_id % columns
     features = torch.roll(features, ((rows // 2) - head_row, (columns // 2) - head_col), dims=(-2, -1))
     return features
-
-
-def get_square_features_params(configuration: Configuration):
-    # Channels, Height, Width
-    return FEATURE_CHANNELS, configuration.rows, configuration.rows
-
-
-def get_features_params(configuration: Configuration):
-    # Channels, Height, Width
-    return FEATURE_CHANNELS, configuration.rows, configuration.columns
 
 
 def plot_features(features, title="Figure"):
