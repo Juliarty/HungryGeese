@@ -25,7 +25,7 @@ class TrainGeese:
 
     _TARGET_UPDATE = 50
     _MEMORY_THRESHOLD = 10000
-    _MEMORY_GREEDY_EXAMPLES = _MEMORY_THRESHOLD // 3
+    _MEMORY_GREEDY_EXAMPLES = _MEMORY_THRESHOLD // 3000
     _N_EPISODES_TRAIN = 4000
     _COLLECT_FROM_POLICY_NUM = 3
     _EVALUATE_FROM_POLICY_NUM = 3
@@ -44,6 +44,7 @@ class TrainGeese:
         :param device: Устройство, на котором проводятся вычисления
         """
         self._env = make("hungry_geese", debug=TrainGeese._debug)
+        self.result_net_path = ""
 
         self._device = device
 
@@ -53,6 +54,9 @@ class TrainGeese:
         self._get_state = abstract_feature_transform_class.get_state
         self._get_reward = abstract_feature_transform_class.get_reward
         self._adjust_action = abstract_feature_transform_class.adjust_action
+        self.feature_c = abstract_feature_transform_class.FEATURES_CHANNELS_IN
+        self.feature_h = abstract_feature_transform_class.FEATURES_HEIGHT
+        self.feature_w = abstract_feature_transform_class.FEATURES_WIDTH
 
         self._policy_net = nn_factory.create()
         self._target_net = nn_factory.create()
@@ -70,11 +74,11 @@ class TrainGeese:
         self._enemy_factory = AgentFactory(None, GreedyAgent, abstract_feature_transform_class, self._device)
         self._rollout_agent_factory = AgentFactory(None, GreedyAgent, abstract_feature_transform_class, self._device)
 
-        self._result_param_path = './results/5x5_DQN.net'
-
         self._last_saved_score = 0
+        self.n_episodes = 0
 
     def train(self, n_episodes):
+        self.n_episodes = n_episodes
         self._reset_statistics()
         self.collect_initial_replay_memory()
 
@@ -148,6 +152,8 @@ class TrainGeese:
             update_priorities(idx, torch.abs(state_action_values.squeeze(1) - expected_state_action_values).squeeze(),
                               self._replay_memory)
 
+        self._policy_net.eval()
+
     def collect_initial_replay_memory(self):
         self.collect_data(self._rollout_agent_factory,
                           self._rollout_agent_factory,
@@ -156,12 +162,13 @@ class TrainGeese:
 
     def collect_data(self, agent_factory, enemy_factory, n_episodes, eps_greedy):
         configuration = Configuration(self._env.configuration)
+        collect_range = tqdm(range(n_episodes), desc='Collecting', leave=False) if n_episodes > 100 \
+            else range(n_episodes)
 
-        for ii in range(n_episodes):
+        for _ in collect_range:
             done = False
             agent = agent_factory.create(eps_greedy=eps_greedy)
             enemies = [enemy_factory.create(eps_greedy=0) for _ in range(3)]
-
             trainer = self._env.train([None] + enemies)
 
             prev_obs = None
@@ -193,7 +200,11 @@ class TrainGeese:
                 self._replay_memory.push(priority, prev_state, action, state, reward)
 
     def save_result(self):
-        torch.save(self._result_net.state_dict(), self._result_param_path)
+        feature_str = "c{0}_h{1}_w{2}".format(self.feature_c, self.feature_h, self.feature_w)
+        self.result_net_path = './results/{0}_{1}_{2}_DQN.net'.format(self.n_episodes,
+                                                                      str(self._policy_net),
+                                                                      feature_str)
+        torch.save(self._result_net.state_dict(), self.result_net_path)
 
     def print_win_rates(self):
         t = np.arange(len(self._win_rates['Score']))
@@ -265,8 +276,10 @@ def train(feature_transform_class, n_episodes):
     train_geese.print_win_rates()
     train_geese.save_result()
 
+    record_game(feature_transform_class, net_path=train_geese.result_net_path)
 
-def record_game(feature_transform_class):
+
+def record_game(feature_transform_class, net_path):
     env = make("hungry_geese", debug=True)
     env.reset()
     device = torch.device("cpu")
@@ -277,7 +290,7 @@ def record_game(feature_transform_class):
                      outputs=4,
                      device=device).to(device)
 
-    net.load_state_dict(torch.load("./results/5x5_DQN.net"))
+    net.load_state_dict(torch.load(net_path))
     net.eval()
 
     agent_factory = AgentFactory(net, RLAgent, feature_transform_class, device)
@@ -295,5 +308,4 @@ def record_game(feature_transform_class):
 
 if __name__ == '__main__':
     feature_transform_class = SimpleFeatureTransform
-    #train(feature_transform_class, 30000)
-    record_game(feature_transform_class)
+    train(feature_transform_class, 20)
