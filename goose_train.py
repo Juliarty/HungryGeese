@@ -1,5 +1,5 @@
 from replay_memory import Transition, ReplayMemory, update_priorities, get_priority_weight
-from qestimator import QEstimator, QEstimatorFactory
+from qestimator import QEstimator, QEstimatorFactory, AlexNetQEstimator
 from goose_agents import RLAgent, GreedyAgent, AgentFactory
 from feature_transform import SimpleFeatureTransform, SquareWorld7x7FeatureTransform
 from goose_tools import get_eps
@@ -25,8 +25,7 @@ class TrainGeese:
 
     _TARGET_UPDATE = 50
     _MEMORY_THRESHOLD = 10000
-    _MEMORY_GREEDY_EXAMPLES = _MEMORY_THRESHOLD // 3000
-    _N_EPISODES_TRAIN = 4000
+    _MEMORY_GREEDY_EXAMPLES = _MEMORY_THRESHOLD // 2
     _COLLECT_FROM_POLICY_NUM = 3
     _EVALUATE_FROM_POLICY_NUM = 3
     _MAXIMAL_REPLAY_PRIORITY = 1000
@@ -36,7 +35,8 @@ class TrainGeese:
                  nn_factory,
                  agent_factory,
                  abstract_feature_transform_class,
-                 device
+                 device,
+                 starting_net
                  ):
         """
         :param replay_memory:
@@ -59,6 +59,8 @@ class TrainGeese:
         self.feature_w = abstract_feature_transform_class.FEATURES_WIDTH
 
         self._policy_net = nn_factory.create()
+        if starting_net is not None:
+            self._policy_net.load_state_dict(starting_net.state_dict())
         self._target_net = nn_factory.create()
         self._result_net = nn_factory.create()
         self._target_net.load_state_dict(self._policy_net.state_dict())
@@ -71,6 +73,7 @@ class TrainGeese:
         self._agent_factory = agent_factory
         self._agent_factory.net = self._policy_net
 
+        # self._enemy_factory = AgentFactory(self._policy_net, RLAgent, abstract_feature_transform_class, self._device)
         self._enemy_factory = AgentFactory(None, GreedyAgent, abstract_feature_transform_class, self._device)
         self._rollout_agent_factory = AgentFactory(None, GreedyAgent, abstract_feature_transform_class, self._device)
 
@@ -248,7 +251,7 @@ class TrainGeese:
     def _update_result_net(self):
         evaluated_score = self._evaluate()
         # save agent if he outperforms our previous games
-        if self._last_saved_score * 1.5 < evaluated_score:
+        if self._last_saved_score * 1.2 < evaluated_score:
             # check again whether it plays well
             second_evaluation_score = self._evaluate(save_statistics=False)
             if self._last_saved_score < second_evaluation_score:
@@ -256,37 +259,45 @@ class TrainGeese:
                 self._last_saved_score = second_evaluation_score
 
 
-def train(feature_transform_class, n_episodes):
+def train(feature_transform_class, n_episodes, kernel_sizes, layer_channels, starting_net):
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")
     replay_memory = ReplayMemory(10000)
     agent_factory = AgentFactory(None, RLAgent, feature_transform_class, device)
-    nn_factory = QEstimatorFactory(QEstimator,
-                                   feature_transform_class.FEATURES_CHANNELS_IN,
-                                   feature_transform_class.FEATURES_HEIGHT,
-                                   feature_transform_class.FEATURES_WIDTH,
-                                   device)
+    nn_factory = QEstimatorFactory(estimator_class=AlexNetQEstimator,
+                                   channel_in=feature_transform_class.FEATURES_CHANNELS_IN,
+                                   height=feature_transform_class.FEATURES_HEIGHT,
+                                   width=feature_transform_class.FEATURES_WIDTH,
+                                   kernel_sizes=kernel_sizes,
+                                   layer_channels=layer_channels,
+                                   device=device)
 
     train_geese = TrainGeese(replay_memory=replay_memory,
                              nn_factory=nn_factory,
                              agent_factory=agent_factory,
                              abstract_feature_transform_class=feature_transform_class,
-                             device=device)
+                             device=device,
+                             starting_net=starting_net)
     train_geese.train(n_episodes)
     train_geese.print_win_rates()
     train_geese.save_result()
 
-    record_game(feature_transform_class, net_path=train_geese.result_net_path)
+    record_game(feature_transform_class,
+                net_path=train_geese.result_net_path,
+                kernel_sizes=kernel_sizes,
+                layer_channels=layer_channels)
 
 
-def record_game(feature_transform_class, net_path):
+def record_game(feature_transform_class, net_path, kernel_sizes, layer_channels):
     env = make("hungry_geese", debug=True)
     env.reset()
     device = torch.device("cpu")
 
-    net = QEstimator(c=feature_transform_class.FEATURES_CHANNELS_IN,
+    net = AlexNetQEstimator(c=feature_transform_class.FEATURES_CHANNELS_IN,
                      h=feature_transform_class.FEATURES_HEIGHT,
                      w=feature_transform_class.FEATURES_WIDTH,
+                     kernel_sizes=kernel_sizes,
+                     layer_channels=layer_channels,
                      outputs=4,
                      device=device).to(device)
 
@@ -307,5 +318,21 @@ def record_game(feature_transform_class, net_path):
 
 
 if __name__ == '__main__':
+    device='cpu'
     feature_transform_class = SimpleFeatureTransform
-    train(feature_transform_class, 20)
+    kernel_sizes = [(3, 3), (3, 3), (3, 3)]
+    layer_channels = [16, 16, 16]
+
+    # net_path = "./results/35000_QEstimator_ks22_33_22_ch64_32_16_c12_h7_w11_DQN.net"
+    # net = QEstimator(c=12,
+    #                  h=7,
+    #                  w=11,
+    #                  kernel_sizes=kernel_sizes,
+    #                  layer_channels=layer_channels,
+    #                  outputs=4,
+    #                  device=device).to(device)
+
+    # net.load_state_dict(torch.load(net_path))
+
+    train(feature_transform_class, 35000, kernel_sizes, layer_channels, None)
+    # record_game(feature_transform_class, net_path, kernel_sizes, layer_channels)

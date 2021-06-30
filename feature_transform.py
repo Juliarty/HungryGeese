@@ -88,7 +88,7 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) >= 2:  # died like a hero
         reward = -1 * get_eps(10, 1, observation.step, configuration.episode_steps)
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) == 1:  # died like a rat
-        reward = -100
+         reward = -20
 
     if len(observation.geese[index]) > 0:
         # check whether he lost his chance to become bigger
@@ -102,5 +102,19 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
                 reward -= 2
                 break
 
+    if len(observation.geese[index]) == 0:
+        # check whether he has committed suicide
+        head_y, head_x = row_col(prev_obs.geese[index][0], configuration.columns)
+        for i in range(len(prev_obs.geese)):
+            if i == index or len(prev_obs.geese[i]) == 0:
+                continue
+            enemy = prev_obs.geese[i][0]
+            enemy_y, enemy_x = row_col(enemy, configuration.columns)
+            dist_x = get_distance(enemy_x, head_x, configuration.columns)
+            dist_y = get_distance(enemy_y, head_y, configuration.rows)
+            if dist_y == 0 and dist_x == 1 or \
+               dist_y == 1 and dist_x == 0:
+                reward -= 50
+                break
     # return torch.tensor([[reward]], device=device, dtype=torch.long)
     return reward
