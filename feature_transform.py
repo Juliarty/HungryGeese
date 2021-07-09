@@ -1,6 +1,10 @@
-from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation,row_col
-from feature_proc import get_square_features, get_action_rotated_north_head, get_features
-from goose_tools import get_eps, get_distance
+from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, row_col
+from goose_tools import get_eps_based_on_step, get_distance
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import torch
 
 
 class AbstractFeatureTransform:
@@ -32,7 +36,7 @@ class SimpleFeatureTransform(AbstractFeatureTransform):
 
     @staticmethod
     def get_reward(observation: Observation, prev_observation: Observation, env_reward):
-        return get_reward(observation, prev_observation, SimpleFeatureTransform.configuration)
+        return get_simple_reward(observation, prev_observation, SimpleFeatureTransform.configuration)
 
     @staticmethod
     def get_state(observation: Observation, prev_observation: Observation):
@@ -45,38 +49,18 @@ class SimpleFeatureTransform(AbstractFeatureTransform):
         return get_features(observation, prev_heads, SimpleFeatureTransform.configuration)
 
 
-class SquareWorld7x7FeatureTransform(AbstractFeatureTransform):
-    FEATURES_CHANNELS_IN = 12
-    FEATURES_HEIGHT = 7
-    FEATURES_WIDTH = 7
-    configuration = Configuration({"rows": 7, "columns": 7, 'hunger_rate': 40, 'episodeSteps': 200})
+def get_simple_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
+    index = observation.index
+    if len(observation.geese[index]) > len(prev_obs.geese[index]):
+        return len(observation.geese[index])
 
-    @staticmethod
-    def get_reward(observation: Observation, prev_observation: Observation, env_reward):
-        return get_reward(prev_observation, observation, SquareWorld7x7FeatureTransform.configuration)
+    if 1 < len(observation.geese[index]) < len(prev_obs.geese[index]):
+        return -1
 
-    @staticmethod
-    def get_state(observation: Observation, prev_observation: Observation):
-        prev_heads = get_heads(prev_observation, len(observation.geese))
-        return get_square_features(observation, prev_heads, SquareWorld7x7FeatureTransform.configuration)
+    if len(observation.geese[index]) == 0:
+        return observation.step - configuration.episode_steps
 
-    @staticmethod
-    def adjust_action(observation: Observation, prev_observation: Observation, action: Action):
-        prev_heads = get_heads(prev_observation, len(observation.geese))
-        return get_action_rotated_north_head(observation,
-                                             prev_heads,
-                                             action,
-                                             SquareWorld7x7FeatureTransform.configuration.rows,
-                                             SquareWorld7x7FeatureTransform.configuration.columns)
-
-
-def get_heads(observation, n_geese):
-    prev_heads = [-1] * n_geese
-    if observation is not None:
-        for i in range(n_geese):
-            prev_heads[i] = observation.geese[i][0] if len(observation.geese[i]) != 0 else 1
-
-    return prev_heads
+    return 0
 
 
 def get_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
@@ -86,7 +70,7 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
     if len(observation.geese[index]) > len(prev_obs.geese[index]):     # ate sth
         reward = len(observation.geese[index]) * 1.5
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) >= 2:  # died like a hero
-        reward = -1 * get_eps(10, 1, observation.step, configuration.episode_steps)
+        reward = -1 * get_eps_based_on_step(10, 1, observation.step, configuration.episode_steps)
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) == 1:  # died like a rat
          reward = -20
 
@@ -105,6 +89,7 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
     if len(observation.geese[index]) == 0:
         # check whether he has committed suicide
         head_y, head_x = row_col(prev_obs.geese[index][0], configuration.columns)
+        died_alone = True
         for i in range(len(prev_obs.geese)):
             if i == index or len(prev_obs.geese[i]) == 0:
                 continue
@@ -114,7 +99,70 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
             dist_y = get_distance(enemy_y, head_y, configuration.rows)
             if dist_y == 0 and dist_x == 1 or \
                dist_y == 1 and dist_x == 0:
-                reward -= 50
+                died_alone = False
                 break
+        if died_alone:
+            reward -= 60
     # return torch.tensor([[reward]], device=device, dtype=torch.long)
     return reward
+
+
+def ids2locations(ids, prev_head, step, rows, columns):
+    state = np.zeros((4, rows * columns))
+    if len(ids) == 0:
+        return state
+    state[0, ids[0]] = 1  # goose head
+    if len(ids) > 1:
+        state[1, ids[1:-1]] = 1  # goose body
+        state[2, ids[-1]] = 1  # goose tail
+    if step != 0:
+        state[3, prev_head] = 1  # goose head one step before
+    return state
+
+
+def get_features(observation: Observation, prev_heads, configuration: Configuration):
+    rows, columns = configuration.rows, configuration.columns
+    geese = observation.geese
+    index = observation.index
+    step = observation.step
+    # convert indices to locations
+    locations = np.zeros((len(geese), 4, rows * columns))
+    for i, g in enumerate(geese):
+        locations[i] = ids2locations(g, prev_heads[i], step, rows, columns)
+    if index != 0:  # swap rows for player locations to be in first channel
+        locations[[0, index]] = locations[[index, 0]]
+    # put locations into features
+    features = np.zeros((12, rows * columns))
+    for k in range(4):
+        # склеить все части тела для каждого гуся (кроме предыдущей головы)
+        features[k] = np.sum(locations[k][:3], 0)
+    # склеить соответствующие состояния всех гусей (либо головы всех, либо тело, либо хвосты, либо пред. головы)
+    for k in range(4):
+        features[k + 4] = np.sum(locations[:, k], 0)
+
+    # только пред. голова наешего героя
+    features[-5, :] = locations[index][3]
+
+    features[-4, observation.food] = 1  # food channel
+    features[-3, :] = (step % configuration.hunger_rate) / configuration.hunger_rate  # hunger danger channel
+    features[-2, :] = step / configuration.episode_steps  # timesteps channel
+    features[-1, :] = float((step + 1) % configuration.hunger_rate == 0)  # hunger milestone indicator
+    features = torch.Tensor(features).reshape(-1, rows, columns)
+    # roll
+    if len(geese[index]) > 0:
+        head_row, head_col = row_col(geese[index][0], columns)
+    else:
+        head_row, head_col = row_col(prev_heads[index], columns)
+
+    features = torch.roll(features, ((rows // 2) - head_row, (columns // 2) - head_col), dims=(-2, -1))
+    return features
+
+
+def plot_features(features, title="Figure"):
+    fig, axs = plt.subplots(3, 4, figsize=(20, 10))
+    for i in range(3):
+        for j in range(4):
+            sns.heatmap(features[i * 4 + j], ax=axs[i, j], cmap='Blues',
+                        vmin=0, vmax=1, linewidth=2, linecolor='black', cbar=False)
+    plt.title(title)
+    plt.show()

@@ -1,12 +1,12 @@
 import torch
-from kaggle_environments import make, evaluate
+from kaggle_environments import evaluate
 import numpy as np
 import seaborn as sns
-from feature_transform import SimpleFeatureTransform, SquareWorld7x7FeatureTransform
+from feature_transform import SimpleFeatureTransform
 
 from goose_agents import RLAgent, GreedyAgent, AgentFactory
 import matplotlib.pyplot as plt
-from qestimator import QEstimator
+from qestimator import OneLayerNetQEstimator, GooseNet, AlexNetQEstimator
 
 
 class GooseWar:
@@ -45,7 +45,7 @@ class GooseWar:
 
 if __name__ == "__main__":
     device = 'cpu'
-    factory = AgentFactory(None, GreedyAgent, SimpleFeatureTransform, device)
+    factory = AgentFactory(None, GreedyAgent, SimpleFeatureTransform)
 
     name_to_factory = {"greedy1": factory}
 
@@ -65,37 +65,54 @@ if __name__ == "__main__":
     # name_to_factory["35k_7x11_ks_432_24_48"] = agent_factory
     #######
     #
-    # #####
-    net_path = "./results/35k_7x11_ks_232_24_48_simple_DQN.net"
-    net = QEstimator(c=12,
-                     h=7,
-                     w=11,
-                     kernel_sizes=[(2, 2), (3, 3), (2, 2)],
-                     layer_channels=[32, 48, 48],
-                     outputs=4,
-                     device=device).to(device)
+
+    #####
+
+    net_path = "./results/40000_OneLayerNetQEstimator_ks33_33_00_ch32_64_256_c12_h7_w11_DQN.net"
+    net = OneLayerNetQEstimator()
 
     net.load_state_dict(torch.load(net_path))
     net.eval()
-    agent_factory = AgentFactory(net, RLAgent, SimpleFeatureTransform, device)
-    name_to_factory["35k_7x11_ks_232_24_48"] = agent_factory
+    agent_factory = AgentFactory(net, RLAgent, SimpleFeatureTransform)
+    name_to_factory["40000_OneLayerNetQEstimator"] = agent_factory
     #######
 
-    # #####
-    # net_path = "./results/30k_7x11_ks_534_24_48_simple_DQN.net"
-    # net = QEstimator(c=12,
-    #                  h=7,
-    #                  w=11,
-    #                  kernel_sizes=[(5, 5), (3, 3), (4, 4)],
-    #                  layer_channels=[24, 48, 48],
-    #                  outputs=4,
-    #                  device=device).to(device)
+    #####
+
+    net_path = "./results/5000_OneLayerNetQEstimator_ks33_33_00_ch32_64_256_c12_h7_w11_DQN.net"
+    net = OneLayerNetQEstimator()
+
+    net.load_state_dict(torch.load(net_path))
+    net.eval()
+    agent_factory = AgentFactory(net, RLAgent, SimpleFeatureTransform)
+    name_to_factory["5000_OneLayerNetQEstimator"] = agent_factory
+    #######
+    #####
+
+    # net_path = "./results/40000_AlexNetQEstimator_ks33_33_00_ch32_64_256_c12_h7_w11_DQN.net"
+    # net = AlexNetQEstimator(c=12,
+    #                             h=7,
+    #                             w=11,
+    #                             kernel_sizes=[(3, 3), (3, 3), (4, 4)],
+    #                             layer_channels=[32, 64, 48],
+    #                             outputs=4,
+    #                             device=device).to(device)
     #
     # net.load_state_dict(torch.load(net_path))
     # net.eval()
     # agent_factory = AgentFactory(net, RLAgent, SimpleFeatureTransform, device)
-    # name_to_factory["30k_7x11_ks_534_24_48"] = agent_factory
-    # #######
+    # name_to_factory["40000_AlexNetQEstimator"] = agent_factory
+
+    #####
+
+    net_path = "./results/20000_YarEstimator_c12_h7_w11_DQN.net"
+    net = GooseNet()
+
+    net.load_state_dict(torch.load(net_path))
+    net.eval()
+    agent_factory = AgentFactory(net, RLAgent, SimpleFeatureTransform)
+    name_to_factory["20000_YarEstimator"] = agent_factory
+    #######
     # #####
     # net_path = "./results/20k_7x11_ks232_l64l32l16_simple.net"
     # net = QEstimator(c=12,
