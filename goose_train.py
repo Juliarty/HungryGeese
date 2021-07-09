@@ -1,6 +1,6 @@
 from replay_memory import ReplayMemory, get_priority_weight
 from qestimator import AlexNetQEstimator, GooseNet, OneLayerNetQEstimator
-from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactoryRandom, RLAgentWithRules
+from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactorySelector, RLAgentWithRules
 from feature_transform import SimpleFeatureTransform
 from goose_tools import get_eps_based_on_step, record_game
 from goose_experience import collect_data, push_data_into_replay, load_experience
@@ -70,9 +70,9 @@ class TrainGeese:
 
         # self._enemy_factory = AgentFactory(self._policy_net, RLAgent, abstract_feature_transform_class, self._device)
 
-        self._enemy_factory = EnemyFactoryRandom(
-            [AgentFactory(None, GreedyAgent, abstract_feature_transform_class.get_state).create(0),
-             self._agent_factory.create(0)], [0.85, 0.15])
+        self._enemy_factory = EnemyFactorySelector(
+            [AgentFactory(None, GreedyAgent, abstract_feature_transform_class.get_state),
+             self._agent_factory], [0.85, 0.15])
 
         self._last_saved_score = 0
         self.n_episodes = 0
@@ -173,7 +173,7 @@ class TrainGeese:
         self._policy_net.eval()
         with torch.no_grad():
             agent = self._agent_factory.create(0, self._policy_net)
-            enemies = [self._enemy_factory.create() for _ in range(3)]
+            enemies = [self._enemy_factory.create(0) for _ in range(3)]
             scores = evaluate("hungry_geese",
                               [agent] + enemies,
                               num_episodes=self._EVALUATE_FROM_POLICY_NUM, debug=TrainGeese._debug)
@@ -229,7 +229,7 @@ def train(q_estimator_class, feature_transform_class, n_episodes, starting_net):
 
 def prepare_replay_memory(capacity):
     replay_memory = ReplayMemory(capacity)
-    data_list = load_experience("./experience/yar_goose_15000.pickle")
+    data_list = load_experience("./experience/greedy_1000.pickle")
     push_data_into_replay(data_list=data_list, replay_memory=replay_memory, n_moves=capacity // 3)
     return replay_memory
 

@@ -112,13 +112,13 @@ class RLAgentWithRules(AbstractAgent):
         return Action(action_index + 1).name
 
 
-class EnemyFactoryRandom:
+class EnemyFactorySelector:
     def __init__(self, agents,
                  probabilities):
         self.agents = agents
         self.probabilities = probabilities
 
-    def create(self):
-        return random.choices(self.agents, self.probabilities, k=1)[0]
+    def create(self, eps_greedy):
+        return random.choices(self.agents, self.probabilities, k=1)[0].create(eps_greedy)
 
 
