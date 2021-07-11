@@ -105,11 +105,23 @@ class RLAgentWithRules(AbstractAgent):
         self.net.eval()
         observation = Observation(observation)
         state = self.get_state(observation,  self.prev_observation)
-        q_values = self.net(state.unsqueeze(0)).squeeze()
-        q_values[(self.prev_action + 2) % 4] = -10000
-        action_index = int(q_values.max(0)[1])
+
+        if random.random() > self.eps:
+            action_index = self._get_not_opposite_action(state)
+        else:
+            action_index = self._get_not_opposite_random_action()
+
         self.prev_action = action_index
         return Action(action_index + 1).name
+
+    def _get_not_opposite_action(self, state):
+        q_values = self.net(state.unsqueeze(0)).squeeze()
+        q_values[(self.prev_action + 2) % 4] = -10000
+        return int(q_values.max(0)[1])
+
+    def _get_not_opposite_random_action(self):
+        opposite_action = (self.prev_action + 2) % 4
+        return random.choice([i for i in range(4) if i != opposite_action])
 
 
 class EnemyFactorySelector:

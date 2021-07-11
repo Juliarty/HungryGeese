@@ -20,7 +20,7 @@ class AbstractFeatureTransform:
         ...
 
     @staticmethod
-    def get_reward(observation, prev_observation, env_reward):
+    def get_reward(observation, prev_observation):
         ...
 
     @staticmethod
@@ -35,7 +35,7 @@ class SimpleFeatureTransform(AbstractFeatureTransform):
     configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
 
     @staticmethod
-    def get_reward(observation: Observation, prev_observation: Observation, env_reward):
+    def get_reward(observation: Observation, prev_observation: Observation):
         return get_simple_reward(observation, prev_observation, SimpleFeatureTransform.configuration)
 
     @staticmethod

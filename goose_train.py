@@ -1,9 +1,9 @@
 from replay_memory import ReplayMemory, get_priority_weight
-from qestimator import AlexNetQEstimator, GooseNet, OneLayerNetQEstimator
+from qestimator import AlexNetQEstimator, GooseNet, OneLayerNetQEstimator, RavenNet
 from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactorySelector, RLAgentWithRules
 from feature_transform import SimpleFeatureTransform
 from goose_tools import get_eps_based_on_step, record_game
-from goose_experience import collect_data, push_data_into_replay, load_experience
+from goose_experience import collect_data, push_data_into_replay_randomly, load_experience
 
 from tqdm import tqdm
 from kaggle_environments import make, evaluate
@@ -18,13 +18,13 @@ import torch.optim as optim
 class TrainGeese:
     _debug = False
     _win_rates = {'Score': [], 'Rank': []}
-    _EPS_START = 0.75
+    _EPS_START = 0.45
     _EPS_END = 0.005
-    _BATCH_SIZE = 64
+    _BATCH_SIZE = 128
     _GAMMA = 0.9
 
     _TARGET_UPDATE = 125
-    _COLLECT_FROM_POLICY_NUM = 15
+    _COLLECT_FROM_POLICY_NUM = 10
     _EVALUATE_FROM_POLICY_NUM = 3
 
     def __init__(self,
@@ -62,8 +62,8 @@ class TrainGeese:
         self._target_net.eval()
         self._result_net.eval()
 
-        self._optimizer = optim.RMSprop(self._policy_net.parameters())
-        # self._optimizer = torch.optim.Adam(policy_net.parameters(), 3e-4)
+        # self._optimizer = optim.RMSprop(self._policy_net.parameters())
+        self._optimizer = torch.optim.Adam(self._policy_net.parameters(), 3e-4)
 
         self._agent_factory = agent_factory
         self._agent_factory.net = self._policy_net
@@ -94,7 +94,7 @@ class TrainGeese:
         self.result_net_path = './results/{0}_{1}_{2}_DQN.net'.format(self.n_episodes,
                                                                       str(self._policy_net),
                                                                       feature_str)
-        torch.save(self._result_net.state_dict(), self.result_net_path)
+        torch.save(self._target_net.state_dict(), self.result_net_path)
 
     def print_win_rates(self):
         t = np.arange(len(self._win_rates['Score']))
@@ -150,8 +150,7 @@ class TrainGeese:
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self._GAMMA) + reward_batch
 
-        # Compute Huber loss
-        criterion = nn.SmoothL1Loss()
+        criterion = nn.MSELoss()
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
         # Optimize the model
@@ -210,7 +209,7 @@ class TrainGeese:
                                  get_state=self._get_state,
                                  get_reward=self._get_reward,
                                  n_episodes=self._COLLECT_FROM_POLICY_NUM)
-        push_data_into_replay(data_list, self._replay_memory, len(data_list))
+        push_data_into_replay_randomly(data_list, self._replay_memory, len(data_list) // 2)
 
 
 def train(q_estimator_class, feature_transform_class, n_episodes, starting_net):
@@ -229,8 +228,8 @@ def train(q_estimator_class, feature_transform_class, n_episodes, starting_net):
 
 def prepare_replay_memory(capacity):
     replay_memory = ReplayMemory(capacity)
-    data_list = load_experience("./experience/greedy_1000.pickle")
-    push_data_into_replay(data_list=data_list, replay_memory=replay_memory, n_moves=capacity // 3)
+    data_list = load_experience("./experience/SimpleFeatureTransform/100k_40f_40d_20l.pickle")
+    push_data_into_replay_randomly(data_list=data_list, replay_memory=replay_memory, n_moves=capacity // 5)
     return replay_memory
 
 
@@ -257,14 +256,17 @@ def record_game_against_one_greedy(q_estimator_class, feature_transform_class, n
 
 if __name__ == '__main__':
     feature_transform_class = SimpleFeatureTransform
-    q_estimator_class = GooseNet
-    # #
+    q_estimator_class = OneLayerNetQEstimator
+    # net_path = "./results/60000_YarEstimator_c12_h7_w11_DQN.net"
+    # net = q_estimator_class()
+    # net.load_state_dict(torch.load(net_path))
+    # # #
     train(q_estimator_class=q_estimator_class,
           feature_transform_class=feature_transform_class,
-          n_episodes=5000,
+          n_episodes=10000,
           starting_net=None)
 
-    # net_path = "./results/5000_YarEstimator_c12_h7_w11_DQN.net"
-    # record_game_against_one_greedy(q_estimator_class=q_estimator_class,
+    # net_path = "./results/100061_YarEstimator_c12_h7_w11_DQN.net"
+    # record_game_against_greedy(q_estimator_class=q_estimator_class,
     #                             feature_transform_class=feature_transform_class,
     #                             net_path=net_path)
