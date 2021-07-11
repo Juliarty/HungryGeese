@@ -1,3 +1,5 @@
+import itertools
+
 from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, row_col
 from goose_tools import get_eps_based_on_step, get_distance
 
@@ -166,3 +168,27 @@ def plot_features(features, title="Figure"):
                         vmin=0, vmax=1, linewidth=2, linecolor='black', cbar=False)
     plt.title(title)
     plt.show()
+
+
+def augment(states, actions):
+    action_index = 1
+    state_index = 2
+    # random horizontal flip
+    flip_mask = np.random.rand(len(states)) < 0.5
+
+    states[flip_mask] = states[flip_mask].flip(-1)
+    actions[flip_mask] = torch.where(actions[flip_mask] > 0, 4 - actions[flip_mask], 0)
+
+    # random vertical flip (and also diagonal)
+    flip_mask = np.random.rand(len(states)) < 0.5
+    states[flip_mask] = states[flip_mask].flip(-2)
+    actions[flip_mask] = torch.where(actions[flip_mask] < 3, 2 - actions[flip_mask], 3)
+
+    # shuffle opponents channels
+    permuted_axs = list(itertools.permutations([0, 1, 2]))
+    permutations = [torch.tensor(permuted_axs[i]) for i in np.random.randint(6, size=len(states))]
+    for i, p in enumerate(permutations):
+        shuffled_channels = torch.zeros(3, states.shape[2], states.shape[3])
+        shuffled_channels[p] = states[i, 1:4]
+        states[:, 1:4] = shuffled_channels
+    return states, actions

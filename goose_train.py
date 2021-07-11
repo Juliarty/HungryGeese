@@ -1,7 +1,7 @@
 from replay_memory import ReplayMemory, get_priority_weight
 from qestimator import AlexNetQEstimator, GooseNet, OneLayerNetQEstimator, RavenNet
 from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactorySelector, RLAgentWithRules
-from feature_transform import SimpleFeatureTransform
+from feature_transform import SimpleFeatureTransform, augment
 from goose_tools import get_eps_based_on_step, record_game
 from goose_experience import collect_data, push_data_into_replay_randomly, load_experience
 
@@ -130,6 +130,8 @@ class TrainGeese:
         reward_batch = torch.tensor(list(map(lambda x: x[3], transitions)), dtype=torch.float)
         is_not_done_batch = torch.tensor(list(map(lambda x: x[4] is False, transitions)), dtype=torch.bool)
 
+        state_batch, action_batch = augment(state_batch, action_batch)
+
         if not is_not_done_batch.any():
             return
 
@@ -256,17 +258,17 @@ def record_game_against_one_greedy(q_estimator_class, feature_transform_class, n
 
 if __name__ == '__main__':
     feature_transform_class = SimpleFeatureTransform
-    q_estimator_class = OneLayerNetQEstimator
+    q_estimator_class = GooseNet
     # net_path = "./results/60000_YarEstimator_c12_h7_w11_DQN.net"
     # net = q_estimator_class()
     # net.load_state_dict(torch.load(net_path))
     # # #
-    train(q_estimator_class=q_estimator_class,
-          feature_transform_class=feature_transform_class,
-          n_episodes=10000,
-          starting_net=None)
+    # train(q_estimator_class=q_estimator_class,
+    #       feature_transform_class=feature_transform_class,
+    #       n_episodes=30000,
+    #       starting_net=None)
 
-    # net_path = "./results/100061_YarEstimator_c12_h7_w11_DQN.net"
-    # record_game_against_greedy(q_estimator_class=q_estimator_class,
-    #                             feature_transform_class=feature_transform_class,
-    #                             net_path=net_path)
+    net_path = "./results/30000_YarEstimator_c12_h7_w11_DQN.net"
+    record_game_against_greedy(q_estimator_class=q_estimator_class,
+                                feature_transform_class=feature_transform_class,
+                                net_path=net_path)
