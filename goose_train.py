@@ -1,5 +1,6 @@
 from replay_memory import ReplayMemory, get_priority_weight
-from qestimator import AlexNetQEstimator, GooseNet, OneLayerNetQEstimator, RavenNet
+from qestimator import AlexNetQEstimator, OneLayerNetQEstimator, RavenNet, TwoLayerNetQEstimator, GooseNet2, GooseNet3, \
+    GooseNet4
 from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactorySelector, RLAgentWithRules
 from feature_transform import SimpleFeatureTransform, augment
 from goose_tools import get_eps_based_on_step, record_game
@@ -91,7 +92,7 @@ class TrainGeese:
 
     def save_result(self):
         feature_str = "c{0}_h{1}_w{2}".format(self.feature_c, self.feature_h, self.feature_w)
-        self.result_net_path = './results/{0}_{1}_{2}_DQN.net'.format(self.n_episodes,
+        self.result_net_path = './Champions/{0}_{1}_{2}_DQN.net'.format(self.n_episodes,
                                                                       str(self._policy_net),
                                                                       feature_str)
         torch.save(self._target_net.state_dict(), self.result_net_path)
@@ -231,7 +232,7 @@ def train(q_estimator_class, feature_transform_class, n_episodes, starting_net):
 def prepare_replay_memory(capacity):
     replay_memory = ReplayMemory(capacity)
     data_list = load_experience("./experience/SimpleFeatureTransform/100k_40f_40d_20l.pickle")
-    push_data_into_replay_randomly(data_list=data_list, replay_memory=replay_memory, n_moves=capacity // 5)
+    push_data_into_replay_randomly(data_list=data_list, replay_memory=replay_memory, n_moves=capacity // 4)
     return replay_memory
 
 
@@ -258,17 +259,17 @@ def record_game_against_one_greedy(q_estimator_class, feature_transform_class, n
 
 if __name__ == '__main__':
     feature_transform_class = SimpleFeatureTransform
-    q_estimator_class = GooseNet
-    # net_path = "./results/60000_YarEstimator_c12_h7_w11_DQN.net"
+    q_estimator_class = GooseNet4
+    # net_path = "./Champions/30000_OneLayerNetQEstimator_c12_h7_w11_DQN.net"
     # net = q_estimator_class()
     # net.load_state_dict(torch.load(net_path))
     # # #
     # train(q_estimator_class=q_estimator_class,
     #       feature_transform_class=feature_transform_class,
-    #       n_episodes=30000,
+    #       n_episodes=30011,
     #       starting_net=None)
 
-    net_path = "./results/30000_YarEstimator_c12_h7_w11_DQN.net"
-    record_game_against_greedy(q_estimator_class=q_estimator_class,
+    net_path = "Champions/30k_YarEstimator4Layer.net"
+    record_game_against_himself(q_estimator_class=q_estimator_class,
                                 feature_transform_class=feature_transform_class,
                                 net_path=net_path)

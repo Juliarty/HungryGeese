@@ -6,7 +6,6 @@ from tqdm import tqdm
 
 from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules
 from feature_transform import SimpleFeatureTransform
-from qestimator import GooseNet
 from replay_memory import ReplayMemory
 from kaggle_environments import make
 from kaggle_environments.envs.hungry_geese.hungry_geese import Observation, Configuration, Action
@@ -191,7 +190,7 @@ if __name__ == '__main__':
     #                            len(obs['geese'][obs['index']]) == 0,
     #                            experience_name='greedy_death_without_suicide')
     # generate_greedy_experience(30000, experience_name="greedy_pure_long")
-    # generate_rl_agent_experience("./results/25000_YarEstimator_c12_h7_w11_DQN.net",
+    # generate_rl_agent_experience("./Champions/25000_YarEstimator_c12_h7_w11_DQN.net",
     #                              GooseNet,
     #                              10000,
     #                              experience_name='yar_goose_pure_obs')
