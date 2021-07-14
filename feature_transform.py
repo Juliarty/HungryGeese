@@ -30,6 +30,27 @@ class AbstractFeatureTransform:
         return action
 
 
+class YarFeatureTransform(AbstractFeatureTransform):
+    FEATURES_CHANNELS_IN = 12
+    FEATURES_HEIGHT = 7
+    FEATURES_WIDTH = 11
+    configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
+
+    @staticmethod
+    def get_reward(observation: Observation, prev_observation: Observation):
+        return get_yar_reward(observation, prev_observation, SimpleFeatureTransform.configuration)
+
+    @staticmethod
+    def get_state(observation: Observation, prev_observation: Observation):
+        n_geese = len(observation.geese)
+        prev_heads = [-1] * len(observation.geese)
+        if prev_observation is not None:
+            for i in range(n_geese):
+                prev_heads[i] = prev_observation.geese[i][0] if len(prev_observation.geese[i]) != 0 else 1
+
+        return get_features(observation, prev_heads, SimpleFeatureTransform.configuration)
+
+
 class SimpleFeatureTransform(AbstractFeatureTransform):
     FEATURES_CHANNELS_IN = 12
     FEATURES_HEIGHT = 7
@@ -49,6 +70,17 @@ class SimpleFeatureTransform(AbstractFeatureTransform):
                 prev_heads[i] = prev_observation.geese[i][0] if len(prev_observation.geese[i]) != 0 else 1
 
         return get_features(observation, prev_heads, SimpleFeatureTransform.configuration)
+
+
+def get_yar_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
+    index = observation.index
+    if len(observation.geese[index]) > len(prev_obs.geese[index]):
+        return 1
+
+    if len(observation.geese[index]) == 0:
+        return -2
+
+    return 0
 
 
 def get_simple_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):

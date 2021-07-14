@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 from feature_transform import SimpleFeatureTransform
 
-from goose_agents import RLAgent, GreedyAgent, AgentFactory, RLAgentWithRules
+from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules, SmartGoose
 import matplotlib.pyplot as plt
 from qestimator import OneLayerNetQEstimator, AlexNetQEstimator, TwoLayerNetQEstimator, GooseNet4, GooseNet2, GooseNet3
 
@@ -47,7 +47,8 @@ if __name__ == "__main__":
     device = 'cpu'
     factory = AgentFactory(None, GreedyAgent, SimpleFeatureTransform.get_state)
 
-    name_to_factory = {"greedy1": factory}
+    # name_to_factory = {"greedy1": factory}
+    name_to_factory = {}
     # ####
     # net_path = "./Champions/30000_OneLayerNetQEstimator_c12_h7_w11_DQN.net"
     # net = OneLayerNetQEstimator()
@@ -65,35 +66,43 @@ if __name__ == "__main__":
     # agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
     # name_to_factory["30002_TwoLayerNetQEstimator"] = agent_factory
     #######
-
-    net_path = "Champions/30k_YarEstimator2Layer.net"
-    net = GooseNet2()
-
-    net.load_state_dict(torch.load(net_path))
-    net.eval()
-    agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
-    name_to_factory["2Layers"] = agent_factory
-
-    ###
-    net_path = "Champions/30k_YarEstimator3Layer.net"
-    net = GooseNet3()
-
-    net.load_state_dict(torch.load(net_path))
-    net.eval()
-    agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
-    name_to_factory["3Layers"] = agent_factory
-    ###
+    #
+    # net_path = "Champions/10000_YarEstimator2Layer_c12_h7_w11_DQN.net"
+    # net = GooseNet2()
+    #
+    # net.load_state_dict(torch.load(net_path))
+    # net.eval()
+    # agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
+    # name_to_factory["2Layers"] = agent_factory
 
     ###
-    net_path = "Champions/30k_YarEstimator4Layer.net"
+    # net_path = "Champions/30k_YarEstimator3Layer.net"
+    # net = GooseNet3()
+    #
+    # net.load_state_dict(torch.load(net_path))
+    # net.eval()
+    # agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
+    # name_to_factory["3Layers"] = agent_factory
+    # ###
+
+    ###
+    net_path = "./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net"
     net = GooseNet4()
 
     net.load_state_dict(torch.load(net_path))
     net.eval()
     agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
-    name_to_factory["4Layers"] = agent_factory
+    name_to_factory["4layers"] = agent_factory
     ###
+    ###
+    net_path = "./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net"
+    net = GooseNet4()
 
+    net.load_state_dict(torch.load(net_path))
+    net.eval()
+    agent_factory = AgentFactory(net, SmartGoose, SimpleFeatureTransform.get_state)
+    name_to_factory["Smart"] = agent_factory
+    ###
     ###
     war = GooseWar(name_to_factory)
     war.begin_each_one_vs_all(100)

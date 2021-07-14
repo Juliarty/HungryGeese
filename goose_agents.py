@@ -1,5 +1,6 @@
+import numpy as np
 from kaggle_environments.envs.hungry_geese.hungry_geese \
-    import Observation, Configuration, Action, GreedyAgent as kGreedyAgent
+    import Observation, Configuration, Action, GreedyAgent as kGreedyAgent, translate
 import torch
 import random
 
@@ -99,7 +100,7 @@ class RLAgentWithRules(AbstractAgent):
                          eps_greedy=eps_greedy)
         self.prev_observation = None
         self.eps = eps_greedy
-        self.prev_action = 0
+        self.prev_action = Action(1)
 
     def __call__(self, observation,  configuration):
         self.net.eval()
@@ -111,16 +112,59 @@ class RLAgentWithRules(AbstractAgent):
         else:
             action_index = self._get_not_opposite_random_action()
 
-        self.prev_action = action_index
+        self.prev_action = Action(action_index + 1)
         return Action(action_index + 1).name
 
     def _get_not_opposite_action(self, state):
         q_values = self.net(state.unsqueeze(0)).squeeze()
-        q_values[(self.prev_action + 2) % 4] = -10000
+        q_values[(self.prev_action.opposite().value - 1)] = -10000
         return int(q_values.max(0)[1])
 
     def _get_not_opposite_random_action(self):
-        opposite_action = (self.prev_action + 2) % 4
+        opposite_action = self.prev_action.opposite().value
+        return random.choice([i for i in range(4) if i != opposite_action])
+
+
+class SmartGoose(AbstractAgent):
+    def __init__(self, net, get_state, eps_greedy):
+        super().__init__(net=net,
+                         get_state=get_state,
+                         eps_greedy=eps_greedy)
+        self.prev_observation = None
+        self.eps = eps_greedy
+        self.prev_action = Action(1)
+
+    def __call__(self, observation,  configuration):
+        self.net.eval()
+        observation = Observation(observation)
+        configuration = Configuration(configuration)
+        action_index = self._get_not_bad_action(observation, configuration)
+        self.prev_action = Action(action_index + 1)
+        return Action(action_index + 1).name
+
+    def _get_not_bad_action(self, observation: Observation, configuration: Configuration):
+        """
+        Choose save action (he neither commits suicide nor does kamikadze moves), but probably moves to positions
+        that are adjacent to other goose heads.
+        :param state:
+        :return:
+        """
+        # Don't move into any bodies
+        bodies = {position for goose in observation.geese for position in goose[:-1]}
+
+        # Move to the closest food
+        position = observation.geese[observation.index][0]
+        bad_action_idx_list = [
+            action.value - 1 for action in Action
+            for new_position in [translate(position, action, configuration.columns, configuration.rows)]
+            if (new_position in bodies or (action == self.prev_action.opposite()))]
+        state = self.get_state(observation, self.prev_observation)
+        q_values = self.net(state.unsqueeze(0)).squeeze()
+        q_values[bad_action_idx_list] = -10000
+        return int(q_values.max(0)[1])
+
+    def _get_not_opposite_random_action(self):
+        opposite_action = self.prev_action.opposite().value
         return random.choice([i for i in range(4) if i != opposite_action])
 
 
@@ -132,5 +176,4 @@ class EnemyFactorySelector:
 
     def create(self, eps_greedy):
         return random.choices(self.agents, self.probabilities, k=1)[0].create(eps_greedy)
-
 

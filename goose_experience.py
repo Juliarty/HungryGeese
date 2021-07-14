@@ -1,3 +1,4 @@
+import os
 import pickle
 import random
 
@@ -5,7 +6,8 @@ import torch
 from tqdm import tqdm
 
 from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules
-from feature_transform import SimpleFeatureTransform
+from feature_transform import SimpleFeatureTransform, YarFeatureTransform
+from qestimator import GooseNet4
 from replay_memory import ReplayMemory
 from kaggle_environments import make
 from kaggle_environments.envs.hungry_geese.hungry_geese import Observation, Configuration, Action
@@ -62,7 +64,7 @@ def generate_experience(agent_factory, enemy_factory, n_episodes, episode_condit
     data = collect_data(environment=environment,
                         agent_factory=agent_factory,
                         enemy_factory=enemy_factory,
-                        agent_eps_greedy=0.1,
+                        agent_eps_greedy=0.005,
                         get_state=lambda obs, prev_obs: obs,
                         get_reward=lambda obs, prev_obs: 0,
                         n_episodes=n_episodes,
@@ -146,55 +148,67 @@ def generate_greedy_experience(n_episodes,
                         experience_name=experience_name)
 
 
-def generate_rl_agent_experience(net_path, q_estimator_class, n_episodes, experience_name='agent'):
+def generate_rl_agent_experience(net_path,
+                                 q_estimator_class,
+                                 n_episodes,
+                                 move_condition=lambda obs, prev_obs: True,
+                                 episode_condition=lambda x: True,
+                                 experience_name='agent'):
     net = q_estimator_class()
     net.load_state_dict(torch.load(net_path))
     agent_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
-    enemy_factory = AgentFactory(None, GreedyAgent, SimpleFeatureTransform.get_state)
+    enemy_factory = AgentFactory(net, RLAgentWithRules, SimpleFeatureTransform.get_state)
 
     generate_experience(agent_factory=agent_factory,
                         enemy_factory=enemy_factory,
                         n_episodes=n_episodes,
-                        episode_condition=lambda x: True,
-                        move_condition=lambda obs, prev_obs: True,
+                        episode_condition=episode_condition,
+                        move_condition=move_condition,
                         experience_name=experience_name)
 
 
-def prepare_simple_transform_data(n_moves=100000):
+def prepare_transformed_data(feature_transform_class, n_moves=100000):
     """
         Prepare data for our goose brains.
         40% food
         40% deaths
         20% from the geese who lived long:)
     """
-    path = './experience/SimpleFeatureTransform/100k_40f_40d_20l.pickle'
+    dir = './experience/{0}/'.format(feature_transform_class.__name__)
+    if not os.path.exists(dir):
+        os.mkdir(dir)
+    path = dir + '40k_15f_60d(4l)_25l.pickle'
+
     result = []
     feed = load_experience("experience/greedy_feed_360k.pickle")
-    deaths = load_experience('./experience/greedy_deaths_114k.pickle')
+    deaths = load_experience('./experience/goosenet4l_death_without_suicide_23k.pickle')
     long_episodes = load_experience('./experience/greedy_long_208k.pickle')
-    result += random.choices(feed, k=int(n_moves * 0.4))
-    result += random.choices(deaths, k=int(n_moves * 0.4))
-    result += random.choices(long_episodes, k=int(n_moves * 0.2))
+    result += random.choices(feed, k=int(7000))
+    result += random.choices(deaths, k=int(23000))
+    result += random.choices(long_episodes, k=int(10000))
 
-    result = transform_data(result, SimpleFeatureTransform.get_state, SimpleFeatureTransform.get_reward)
+    result = transform_data(result, feature_transform_class.get_state, feature_transform_class.get_reward)
 
     with open(path, 'wb') as f:
         pickle.dump(result, f)
 
 
 if __name__ == '__main__':
-    prepare_simple_transform_data()
-    # generate_greedy_experience(n_episodes=120000,
-    #                            move_condition=lambda obs, prev_obs:
-    #                            # len(obs['geese'][obs['index']]) > len(prev_obs['geese'][prev_obs['index']]),
-    #                            len(obs['geese'][obs['index']]) == 0,
-    #                            experience_name='greedy_death_without_suicide')
+    transform_class = YarFeatureTransform
+    prepare_transformed_data(transform_class)
+    # generate_rl_agent_experience(net_path='./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net',
+    #                              q_estimator_class=GooseNet4,
+    #                              n_episodes=30000,
+    #                              move_condition=lambda obs, prev_obs:
+    #                              # len(obs['geese'][obs['index']]) > len(prev_obs['geese'][prev_obs['index']]),
+    #                              len(obs['geese'][obs['index']]) == 0,
+    #                              experience_name='goosenet4l_death_without_suicide')
+    # t = load_experience('experience/goosenet4l_death_without_suicide_23k.pickle')
+    # ...
     # generate_greedy_experience(30000, experience_name="greedy_pure_long")
     # generate_rl_agent_experience("./Champions/25000_YarEstimator_c12_h7_w11_DQN.net",
     #                              GooseNet,
     #                              10000,
     #                              experience_name='yar_goose_pure_obs')
-
-
 
     ...
