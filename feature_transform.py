@@ -1,6 +1,7 @@
 import itertools
 
-from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, row_col
+from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, row_col, translate, \
+    adjacent_positions
 from goose_tools import get_eps_based_on_step, get_distance
 
 import numpy as np
@@ -30,6 +31,27 @@ class AbstractFeatureTransform:
         return action
 
 
+class AnnFeatureTransform(AbstractFeatureTransform):
+    FEATURES_CHANNELS_IN = 12 + 2  # add difference between the fattest goose, and empty spaces
+    FEATURES_HEIGHT = 7
+    FEATURES_WIDTH = 11
+    configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
+
+    @staticmethod
+    def get_reward(observation: Observation, prev_observation: Observation):
+        return get_yar_reward(observation, prev_observation, AnnFeatureTransform.configuration)
+
+    @staticmethod
+    def get_state(observation: Observation, prev_observation: Observation):
+        n_geese = len(observation['geese'])
+        prev_heads = [-1] * len(observation['geese'])
+        if prev_observation is not None:
+            for i in range(n_geese):
+                prev_heads[i] = prev_observation['geese'][i][0] if len(prev_observation['geese'][i]) != 0 else 1
+
+        return get_ann_features(observation, prev_heads, AnnFeatureTransform.configuration)
+
+
 class YarFeatureTransform(AbstractFeatureTransform):
     FEATURES_CHANNELS_IN = 12
     FEATURES_HEIGHT = 7
@@ -38,7 +60,7 @@ class YarFeatureTransform(AbstractFeatureTransform):
 
     @staticmethod
     def get_reward(observation: Observation, prev_observation: Observation):
-        return get_yar_reward(observation, prev_observation, SimpleFeatureTransform.configuration)
+        return get_yar_reward(observation, prev_observation, YarFeatureTransform.configuration)
 
     @staticmethod
     def get_state(observation: Observation, prev_observation: Observation):
@@ -48,7 +70,7 @@ class YarFeatureTransform(AbstractFeatureTransform):
             for i in range(n_geese):
                 prev_heads[i] = prev_observation.geese[i][0] if len(prev_observation.geese[i]) != 0 else 1
 
-        return get_features(observation, prev_heads, SimpleFeatureTransform.configuration)
+        return get_features(observation, prev_heads, YarFeatureTransform.configuration)
 
 
 class SimpleFeatureTransform(AbstractFeatureTransform):
@@ -72,15 +94,39 @@ class SimpleFeatureTransform(AbstractFeatureTransform):
         return get_features(observation, prev_heads, SimpleFeatureTransform.configuration)
 
 
-def get_yar_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
+def get_ann_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
+    # Гусь, который смотрит на других в плане формы
     index = observation.index
-    if len(observation.geese[index]) > len(prev_obs.geese[index]):
-        return 1
-
-    if len(observation.geese[index]) == 0:
+    if len(observation.geese[index]) == 0:  # умер
         return -2
 
+    if len(observation.geese[index]) > len(prev_obs.geese[index]):  # поел
+        return get_enemy_fat_advantage(observation) / 5
+
+    tail_adjacent_positions = {
+        goose_tail_adjacent
+        for goose in observation.geese
+        if len(goose) > 0
+        for goose_tail in [goose[-1]]
+        for goose_tail_adjacent in adjacent_positions(goose_tail, configuration.columns, configuration.rows)
+    }
+
+    if observation.geese[index][0] in tail_adjacent_positions and get_enemy_fat_advantage(observation) < 3:  # сохраненяет форму тренировками
+        return (3 - get_enemy_fat_advantage(observation)) / 10
+
     return 0
+
+
+def get_yar_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
+    result = 0
+    index = observation.index
+    if len(observation.geese[index]) > len(prev_obs.geese[index]):
+        result += 1
+
+    if len(observation.geese[index]) == 0:
+        result = -2
+
+    return result
 
 
 def get_simple_reward(observation: Observation, prev_obs: Observation, configuration: Configuration):
@@ -101,12 +147,12 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
     reward = 0
     index = observation.index
 
-    if len(observation.geese[index]) > len(prev_obs.geese[index]):     # ate sth
+    if len(observation.geese[index]) > len(prev_obs.geese[index]):  # ate sth
         reward = len(observation.geese[index]) * 1.5
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) >= 2:  # died like a hero
         reward = -1 * get_eps_based_on_step(10, 1, observation.step, configuration.episode_steps)
     elif len(observation.geese[index]) == 0 and len(prev_obs.geese[index]) == 1:  # died like a rat
-         reward = -20
+        reward = -20
 
     if len(observation.geese[index]) > 0:
         # check whether he lost his chance to become bigger
@@ -116,7 +162,7 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
             dist_x = get_distance(food_x, head_x, configuration.columns)
             dist_y = get_distance(food_y, head_y, configuration.rows)
             if dist_y == 0 and dist_x == 1 or \
-               dist_y == 1 and dist_x == 0:
+                    dist_y == 1 and dist_x == 0:
                 reward -= 2
                 break
 
@@ -132,7 +178,7 @@ def get_reward(observation: Observation, prev_obs: Observation, configuration: C
             dist_x = get_distance(enemy_x, head_x, configuration.columns)
             dist_y = get_distance(enemy_y, head_y, configuration.rows)
             if dist_y == 0 and dist_x == 1 or \
-               dist_y == 1 and dist_x == 0:
+                    dist_y == 1 and dist_x == 0:
                 died_alone = False
                 break
         if died_alone:
@@ -176,7 +222,6 @@ def get_features(observation: Observation, prev_heads, configuration: Configurat
 
     # только пред. голова наешего героя
     features[-5, :] = locations[index][3]
-
     features[-4, observation.food] = 1  # food channel
     features[-3, :] = (step % configuration.hunger_rate) / configuration.hunger_rate  # hunger danger channel
     features[-2, :] = step / configuration.episode_steps  # timesteps channel
@@ -190,6 +235,66 @@ def get_features(observation: Observation, prev_heads, configuration: Configurat
 
     features = torch.roll(features, ((rows // 2) - head_row, (columns // 2) - head_col), dims=(-2, -1))
     return features
+
+
+def get_ann_features(observation: Observation, prev_heads, configuration: Configuration):
+    rows, columns = configuration.rows, configuration.columns
+    geese = observation.geese
+    index = observation.index
+    step = observation.step
+    # convert indices to locations
+    locations = np.zeros((len(geese), 4, rows * columns))
+    for i, g in enumerate(geese):
+        locations[i] = ids2locations(g, prev_heads[i], step, rows, columns)
+    if index != 0:  # swap rows for player locations to be in first channel
+        locations[[0, index]] = locations[[index, 0]]
+    # put locations into features
+    features = np.zeros((14, rows * columns))
+    for k in range(4):
+        # склеить все части тела для каждого гуся (кроме предыдущей головы)
+        features[k] = np.sum(locations[k][:3], 0)
+    # склеить соответствующие состояния всех гусей (либо головы всех, либо тело, либо хвосты, либо пред. головы)
+    for k in range(4):
+        features[k + 4] = np.sum(locations[:, k], 0)
+    # только пред. голова наешего героя
+    features[7, :] = locations[index][3]
+
+    features[8, observation.food] = 1  # food channel
+    features[9, :] = (step % configuration.hunger_rate) / configuration.hunger_rate  # hunger danger channel
+    features[10, :] = step / configuration.episode_steps  # timesteps channel
+    features[11, :] = float((step + 1) % configuration.hunger_rate == 0)  # hunger milestone indicator
+
+    features[12, :] = get_enemy_fat_advantage(observation)
+    features[13, :] = create_heat_map(observation.geese, configuration)
+
+    features = torch.Tensor(features).reshape(-1, rows, columns)
+    # roll
+    if len(geese[index]) > 0:
+        head_row, head_col = row_col(geese[index][0], columns)
+    else:
+        head_row, head_col = row_col(prev_heads[index], columns)
+
+    features = torch.roll(features, ((rows // 2) - head_row, (columns // 2) - head_col), dims=(-2, -1))
+    return features
+
+
+def get_enemy_fat_advantage(observation: Observation):
+    index = observation.index
+    enemy_lengths = [len(observation.geese[i]) for i in range(len(observation.geese)) if i != index]
+    return max(enemy_lengths) - len(observation.geese[index])
+
+
+def create_heat_map(geese, configuration):
+    obstacle_pos_list = []
+    for i in range(len(geese)):
+        obstacle_pos_list += geese[i][:-1]  # добавляем препятствия, хвост не является препятствием
+
+    heat_map = np.ones(configuration.rows * configuration.columns) * 5
+    for position in obstacle_pos_list:
+        for new_position in [translate(position, action, configuration.columns, configuration.rows) for action in
+                             Action]:
+            heat_map[new_position] -= 1
+    return heat_map
 
 
 def plot_features(features, title="Figure"):

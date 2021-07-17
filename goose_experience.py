@@ -6,7 +6,7 @@ import torch
 from tqdm import tqdm
 
 from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules
-from feature_transform import SimpleFeatureTransform, YarFeatureTransform
+from feature_transform import SimpleFeatureTransform, YarFeatureTransform, AnnFeatureTransform
 from qestimator import GooseNet4
 from replay_memory import ReplayMemory
 from kaggle_environments import make
@@ -177,15 +177,16 @@ def prepare_transformed_data(feature_transform_class, n_moves=100000):
     dir = './experience/{0}/'.format(feature_transform_class.__name__)
     if not os.path.exists(dir):
         os.mkdir(dir)
-    path = dir + '40k_15f_60d(4l)_25l.pickle'
+    path = dir + '100k_40f_40d_20l.pickle'
 
     result = []
     feed = load_experience("experience/greedy_feed_360k.pickle")
     deaths = load_experience('./experience/goosenet4l_death_without_suicide_23k.pickle')
+    deaths += load_experience('./experience/greedy_deaths_114k.pickle')
     long_episodes = load_experience('./experience/greedy_long_208k.pickle')
-    result += random.choices(feed, k=int(7000))
-    result += random.choices(deaths, k=int(23000))
-    result += random.choices(long_episodes, k=int(10000))
+    result += random.choices(feed, k=int(n_moves * 0.4))
+    result += random.choices(deaths, k=int(n_moves * 0.4))
+    result += random.choices(long_episodes, k=int(n_moves * 0.2))
 
     result = transform_data(result, feature_transform_class.get_state, feature_transform_class.get_reward)
 
@@ -194,7 +195,7 @@ def prepare_transformed_data(feature_transform_class, n_moves=100000):
 
 
 if __name__ == '__main__':
-    transform_class = YarFeatureTransform
+    transform_class = AnnFeatureTransform
     prepare_transformed_data(transform_class)
     # generate_rl_agent_experience(net_path='./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net',
     #                              q_estimator_class=GooseNet4,
