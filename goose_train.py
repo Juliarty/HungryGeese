@@ -1,8 +1,9 @@
 from replay_memory import ReplayMemory, get_priority_weight
 from qestimator import AlexNetQEstimator, OneLayerNetQEstimator, RavenNet, TwoLayerNetQEstimator, GooseNet2, GooseNet3, \
-    GooseNet4
-from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactorySelector, RLAgentWithRules
-from feature_transform import SimpleFeatureTransform, augment, YarFeatureTransform
+    GooseNet4, GooseNetResidual4, GooseNetGoogle
+from goose_agents import RLAgent, GreedyAgent, AgentFactory, EnemyFactorySelector, RLAgentWithRules, SmartGoose, \
+    GooseWarlock
+from feature_transform import SimpleFeatureTransform, augment, YarFeatureTransform, AnnFeatureTransform
 from goose_tools import get_eps_based_on_step, record_game
 from goose_experience import collect_data, push_data_into_replay_randomly, load_experience
 
@@ -18,13 +19,13 @@ import torch.nn as nn
 class TrainGeese:
     _debug = False
     _win_rates = {'Score': [], 'Rank': []}
-    _EPS_START = 0.05
+    _EPS_START = 0.08
     _EPS_END = 0.005
-    _BATCH_SIZE = 128
+    _BATCH_SIZE = 64
     _GAMMA = 0.9
 
-    _TARGET_UPDATE = 10
-    _COLLECT_FROM_POLICY_NUM = 10
+    _TARGET_UPDATE = 150
+    _COLLECT_FROM_POLICY_NUM = 6
     _EVALUATE_FROM_POLICY_NUM = 3
 
     def __init__(self,
@@ -69,10 +70,13 @@ class TrainGeese:
         self._agent_factory.net = self._policy_net
 
         # self._enemy_factory = AgentFactory(self._policy_net, RLAgent, abstract_feature_transform_class, self._device)
-
+        net_path = "./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net"
+        net_enemy = GooseNet4(12)
+        net_enemy.load_state_dict(torch.load(net_path))
         self._enemy_factory = EnemyFactorySelector(
             [AgentFactory(None, GreedyAgent, abstract_feature_transform_class.get_state),
-             self._agent_factory], [0.35, 0.65])
+             AgentFactory(net_enemy, SmartGoose, YarFeatureTransform.get_state),
+             self._agent_factory], [0.6, 0.2, 0.2])
 
         self._last_saved_score = 0
         self.n_episodes = 0
@@ -211,7 +215,7 @@ class TrainGeese:
                                  get_state=self._get_state,
                                  get_reward=self._get_reward,
                                  n_episodes=self._COLLECT_FROM_POLICY_NUM)
-        push_data_into_replay_randomly(data_list, self._replay_memory, len(data_list) // 2)
+        push_data_into_replay_randomly(data_list, self._replay_memory, len(data_list) * 0.75)
 
 
 def train(q_estimator_class, feature_transform_class, n_episodes, starting_net):
@@ -230,8 +234,8 @@ def train(q_estimator_class, feature_transform_class, n_episodes, starting_net):
 
 def prepare_replay_memory(capacity):
     replay_memory = ReplayMemory(capacity)
-    data_list = load_experience("./experience/YarFeatureTransform/40k_15f_60d(4l)_25l.pickle")
-    push_data_into_replay_randomly(data_list=data_list, replay_memory=replay_memory, n_moves=10000)
+    data_list = load_experience("./experience/AnnFeatureTransform/100k_40f_40d_20l.pickle")
+    push_data_into_replay_randomly(data_list=data_list, replay_memory=replay_memory, n_moves=capacity // 10)
     return replay_memory
 
 
@@ -245,7 +249,7 @@ def record_game_against_greedy(q_estimator_class, feature_transform_class, net_p
 def record_game_against_himself(q_estimator_class, feature_transform_class, net_path):
     net = q_estimator_class()
     net.load_state_dict(torch.load(net_path))
-    agent_factory = AgentFactory(net, RLAgentWithRules, feature_transform_class.get_state)
+    agent_factory = AgentFactory(net, GooseWarlock, feature_transform_class.get_state)
     record_game(agent_factory.create(0), [agent_factory.create(0) for _ in range(3)])
 
 
@@ -257,20 +261,19 @@ def record_game_against_one_greedy(q_estimator_class, feature_transform_class, n
 
 
 if __name__ == '__main__':
-    feature_transform_class = YarFeatureTransform
-    q_estimator_class = GooseNet4
-    net_path = "./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net"
+    feature_transform_class = AnnFeatureTransform
+    q_estimator_class = GooseNetGoogle
+    net_path = "./Champions/75000_GooseNetGoogle_c14_h7_w11_DQN.net"
     net = q_estimator_class()
     net.load_state_dict(torch.load(net_path))
-    # # #
-    train(q_estimator_class=q_estimator_class,
-          feature_transform_class=feature_transform_class,
-          n_episodes=301,
-          starting_net=net)
+    # #
+    # train(q_estimator_class=q_estimator_class,
+    #       feature_transform_class=feature_transform_class,
+    #       n_episodes=7500,
+    #       starting_net=net)
 
-    # net_path = "./Champions/5001_YarEstimator4Layer_c12_h7_w11_DQN.net"
-    # # net_path = "/home/juliarty/Downloads/g.net"
-    #
-    # record_game_against_himself(q_estimator_class=q_estimator_class,
-    #                             feature_transform_class=feature_transform_class,
-    #                             net_path=net_path)
+    # net_path = "Champions/75000_GooseNetGoogle_c14_h7_w11_DQN.net"
+    # #
+    record_game_against_himself(q_estimator_class=q_estimator_class,
+                                   feature_transform_class=feature_transform_class,
+                                   net_path=net_path)

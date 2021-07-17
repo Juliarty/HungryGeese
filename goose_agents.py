@@ -1,9 +1,13 @@
 import numpy as np
 from kaggle_environments.envs.hungry_geese.hungry_geese \
-    import Observation, Configuration, Action, GreedyAgent as kGreedyAgent, translate
+    import Observation, Configuration, Action, GreedyAgent as kGreedyAgent, translate, adjacent_positions
 import torch
 import random
 
+from feature_transform import AnnFeatureTransform
+from goose_tools import get_prev_actions
+from oracle import Oracle
+from actions_generator_strategy import DeepQGeneratorStrategy
 
 class AbstractAgent:
 
@@ -152,20 +156,68 @@ class SmartGoose(AbstractAgent):
         # Don't move into any bodies
         bodies = {position for goose in observation.geese for position in goose[:-1]}
 
-        # Move to the closest food
         position = observation.geese[observation.index][0]
         bad_action_idx_list = [
             action.value - 1 for action in Action
             for new_position in [translate(position, action, configuration.columns, configuration.rows)]
             if (new_position in bodies or (action == self.prev_action.opposite()))]
+
+        opponents = [
+            goose
+            for index, goose in enumerate(observation.geese)
+            if index != observation.index and len(goose) > 0
+        ]
+
+        head_adjacent_positions = {
+            opponent_head_adjacent
+            for opponent in opponents
+            for opponent_head in [opponent[0]]
+            for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
+        }
+
+        risky_action_idx_list = [
+            action.value - 1 for action in Action
+            for new_position in [translate(position, action, configuration.columns, configuration.rows)]
+            if new_position in head_adjacent_positions]
         state = self.get_state(observation, self.prev_observation)
+
         q_values = self.net(state.unsqueeze(0)).squeeze()
         q_values[bad_action_idx_list] = -10000
+        q_values[risky_action_idx_list] = -5000
+
         return int(q_values.max(0)[1])
 
     def _get_not_opposite_random_action(self):
         opposite_action = self.prev_action.opposite().value
         return random.choice([i for i in range(4) if i != opposite_action])
+
+
+class GooseWarlock(AbstractAgent):
+    def __init__(self, net, get_state, eps_greedy):
+        super().__init__(net=net,
+                         get_state=get_state,
+
+                         eps_greedy=eps_greedy)
+        self.prev_observation = None
+        self.prev_actions = None
+        self.eps = eps_greedy
+        self.oracle = Oracle(net, DeepQGeneratorStrategy(net, get_state), get_state, AnnFeatureTransform.get_reward)
+
+    def __call__(self, observation,  configuration):
+        if observation.step == 0:
+            self.reset()
+        self.net.eval()
+        observation = Observation(observation)
+        self.prev_actions = get_prev_actions(observation, self.prev_observation)
+        action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=4)
+
+        self.prev_observation = observation
+
+        return action.name
+
+    def reset(self):
+        self.prev_observation = None
+        self.prev_actions = None
 
 
 class EnemyFactorySelector:
