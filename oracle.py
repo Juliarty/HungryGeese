@@ -98,7 +98,7 @@ class OracleTree:
             if prediction > max_prediction:
                 best_node = node
                 max_prediction = prediction
-        print(self._take_second_parent(best_node))
+        # print(self._take_second_parent(best_node))
         return self._take_second_parent(best_node).prev_actions[best_node.observation['index']]
 
     def _get_not_bad_action(self, observation: Observation, prev_obs: Observation, prev_actions, get_state,
@@ -234,18 +234,19 @@ def is_observation_good(observation: Observation):
 
 
 # at least we survive, may be sth else
-def is_observation_excellent(observation: Observation):
+def is_observation_excellent(observation: Observation, prev_obs: Observation):
     result = True
     if len(observation.geese[observation.index]) == 0:
         return False
-    # remove risky position
-    head_adjacent_positions = get_enemy_head_adjacent_positions(observation)
+    head_adjacent_positions = get_enemy_head_adjacent_positions(prev_obs)
     head_head_adjacent_positions = {
         position
         for head_adjacent_position in head_adjacent_positions
         for position in adjacent_positions(head_adjacent_position, configuration.columns, configuration.rows)
     }
 
+    # new agent head position is to close, there are only two moves to enemies previous head position
+    # remove risky position, 13 squares
     head = observation.geese[observation.index][0]
     if head in head_adjacent_positions or head in head_head_adjacent_positions:
         result = False
