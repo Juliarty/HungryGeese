@@ -99,6 +99,8 @@ class WideQGeneratorStrategy(AbstractActionsGeneratorStrategy):
             prev_action = None if prev_actions is None else prev_actions[i]
             index_to_actions[i] = [action for action in Action if
                                    action_is_not_suicide(action, observation, prev_action, i)]
+            if len(index_to_actions[i]) == 0:
+                index_to_actions[i] = [Action(1)]
 
         for combination in itertools.product(*index_to_actions.values()):
             result.append(combination)
