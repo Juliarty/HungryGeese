@@ -1,14 +1,6 @@
-#   Строим картину будущего мира, проигрывая несколько ходов вперёд
-#   1. Проигрывать наш лучший ход, согласно предсказанию оракул
-#       a. Выбрать лучший ход из позиции
-#       b. Выбрать все движения за врагов, обрезать хвосты
-#       c. Добавить ход к дереву
-#       d. Повторить n_steps - 1 h раз
 import random
 
-from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate, \
-    adjacent_positions
-
+from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate
 from actions_generator_strategy import AbstractActionsGeneratorStrategy
 from goose_tools import get_enemy_head_adjacent_positions
 
@@ -53,7 +45,7 @@ class OracleTreeNode:
             if get_risk_penalty is not None:
                 instant_reward += get_risk_penalty(next_obs, self.observation)
 
-            if is_observation_excellent(next_obs):
+            if action_generator_strategy.filter_observation(next_obs, self.observation):
                 child = OracleTreeNode(self, next_obs, self.observation, agent_actions,
                                        self.accumulated_reward + instant_reward)
                 result.append(child)
@@ -223,35 +215,6 @@ def get_next_observation(observation, agent_actions, prev_actions):
         next.food.append(random.choice(range(76)))
 
     return next
-
-
-# at least we survive, may be sth else
-def is_observation_good(observation: Observation):
-    result = True
-    if len(observation.geese[observation.index]) == 0:
-        result = False
-    return result
-
-
-# at least we survive, may be sth else
-def is_observation_excellent(observation: Observation, prev_obs: Observation):
-    result = True
-    if len(observation.geese[observation.index]) == 0:
-        return False
-    head_adjacent_positions = get_enemy_head_adjacent_positions(prev_obs)
-    head_head_adjacent_positions = {
-        position
-        for head_adjacent_position in head_adjacent_positions
-        for position in adjacent_positions(head_adjacent_position, configuration.columns, configuration.rows)
-    }
-
-    # new agent head position is to close, there are only two moves to enemies previous head position
-    # remove risky position, 13 squares
-    head = observation.geese[observation.index][0]
-    if head in head_adjacent_positions or head in head_head_adjacent_positions:
-        result = False
-
-    return result
 
 
 def get_risk_penalty(observation, prev_obs):

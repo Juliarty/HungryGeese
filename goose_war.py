@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 from tqdm import tqdm
 
-from feature_transform import SimpleFeatureTransform, AnnFeatureTransform
+from feature_transform import SimpleFeatureTransform, AnnFeatureTransform, YarFeatureTransform
 
 from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules, SmartGoose, GooseWarlock, GoosePaladin
 import matplotlib.pyplot as plt
@@ -67,8 +67,8 @@ if __name__ == "__main__":
     device = 'cpu'
     factory = AgentFactory(None, GreedyAgent, SimpleFeatureTransform.get_state)
 
-    # name_to_factory = {"greedy1": factory}
-    name_to_factory = {}
+    name_to_factory = {"greedy1": factory}
+    # name_to_factory = {}
     #
     # net_path = "Champions/10000_YarEstimator2Layer_c12_h7_w11_DQN.net"
     # net = GooseNet2()
@@ -107,13 +107,22 @@ if __name__ == "__main__":
     # name_to_factory["Residual4L"] = agent_factory
     ###
     ###
-    net_path = "./Champions/75000_GooseNetGoogle_c14_h7_w11_DQN.net"
-    net = GooseNetGoogle(n_channels=14)
+    net_path = "./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net"
+    net = GooseNet4(n_channels=12)
 
     net.load_state_dict(torch.load(net_path))
     net.eval()
-    agent_factory = AgentFactory(net, SmartGoose, AnnFeatureTransform.get_state)
-    name_to_factory["Google Smart"] = agent_factory
+    agent_factory = AgentFactory(net, SmartGoose, YarFeatureTransform.get_state)
+    name_to_factory["GooseNet smart"] = agent_factory
+    ###
+    ###
+    net_path = "./Champions/10000_YarEstimator4Layer_c12_h7_w11_DQN.net"
+    net = GooseNet4(n_channels=12)
+
+    net.load_state_dict(torch.load(net_path))
+    net.eval()
+    agent_factory = AgentFactory(net, GooseWarlock, YarFeatureTransform.get_state)
+    name_to_factory["GooseNet Warlock"] = agent_factory
     ###
     ###
     net_path = "./Champions/75000_GooseNetGoogle_c14_h7_w11_DQN.net"
@@ -135,6 +144,6 @@ if __name__ == "__main__":
     ###
     ###
     war = GooseWar(name_to_factory)
-    war.begin_each_one_vs_all(4)
+    war.begin_each_one_vs_all(1)
 
     war.show_scores()

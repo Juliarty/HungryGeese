@@ -1,9 +1,11 @@
 import itertools
 from abc import ABC, abstractmethod
 from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate, \
-    GreedyAgent
+    GreedyAgent, adjacent_positions
 
-from goose_tools import get_prev_actions
+from goose_tools import get_prev_actions, get_enemy_head_adjacent_positions
+
+configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
 
 
 class AbstractActionsGeneratorStrategy(ABC):
@@ -12,9 +14,12 @@ class AbstractActionsGeneratorStrategy(ABC):
     def get_actions(self, observation, prev_obs, prev_actions):
         pass
 
+    @abstractmethod
+    def filter_observation(self, observation: Observation, prev_obs: Observation):
+        pass
+
 
 class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
-    configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
     greedy = GreedyAgent(configuration)
 
     def __init__(self, q_estimator, get_state):
@@ -42,6 +47,13 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
             actions[index] = action
             result.append(actions)
 
+        return result
+
+    def filter_observation(self, observation: Observation, prev_obs: Observation):
+        # at least we survive, may be sth else
+        result = True
+        if len(observation.geese[observation.index]) == 0:
+            result = False
         return result
 
     def _get_best_action_for_enemy(self, observation, prev_obs, enemy_index):
@@ -84,6 +96,7 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
 
 
 class WideQGeneratorStrategy(AbstractActionsGeneratorStrategy):
+
     def __init__(self, q_estimator, get_state):
         self.q_estimator = q_estimator
         self.get_state = get_state
@@ -106,6 +119,25 @@ class WideQGeneratorStrategy(AbstractActionsGeneratorStrategy):
             result.append(combination)
         return result
 
+    def filter_observation(self, observation: Observation, prev_obs: Observation):
+        result = True
+        if len(observation.geese[observation.index]) == 0:
+            return False
+        head_adjacent_positions = get_enemy_head_adjacent_positions(prev_obs)
+        head_head_adjacent_positions = {
+            position
+            for head_adjacent_position in head_adjacent_positions
+            for position in adjacent_positions(head_adjacent_position, configuration.columns, configuration.rows)
+        }
+
+        # new agent head position is to close, there are only two moves to enemies previous head position
+        # remove risky position, 13 squares
+        head = observation.geese[observation.index][0]
+        if head in head_adjacent_positions or head in head_head_adjacent_positions:
+            result = False
+
+        return result
+
 
 def action_is_not_suicide(action, observation, prev_action, agent_index):
     bodies = {position for goose in observation.geese for position in goose[:-1]}
@@ -118,3 +150,5 @@ def action_is_not_suicide(action, observation, prev_action, agent_index):
         if (new_position in bodies or (prev_action is not None and action == prev_action.opposite()))]
 
     return action not in bad_action_idx_list
+
+
