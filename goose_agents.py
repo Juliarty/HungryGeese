@@ -7,7 +7,8 @@ import random
 from feature_transform import AnnFeatureTransform
 from goose_tools import get_prev_actions
 from oracle import Oracle
-from actions_generator_strategy import DeepQGeneratorStrategy
+from actions_generator_strategy import DeepQGeneratorStrategy, WideQGeneratorStrategy
+
 
 class AbstractAgent:
 
@@ -201,7 +202,7 @@ class GooseWarlock(AbstractAgent):
         self.prev_observation = None
         self.prev_actions = None
         self.eps = eps_greedy
-        self.oracle = Oracle(net, DeepQGeneratorStrategy(net, get_state), get_state, AnnFeatureTransform.get_reward)
+        self.oracle = Oracle(net, WideQGeneratorStrategy(net, get_state), get_state, AnnFeatureTransform.get_reward)
 
     def __call__(self, observation,  configuration):
         if observation.step == 0:
@@ -209,7 +210,7 @@ class GooseWarlock(AbstractAgent):
         self.net.eval()
         observation = Observation(observation)
         self.prev_actions = get_prev_actions(observation, self.prev_observation)
-        action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=4)
+        action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=1)
 
         self.prev_observation = observation
 

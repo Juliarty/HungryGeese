@@ -3,8 +3,9 @@ from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configura
 
 from actions_generator_strategy import DeepQGeneratorStrategy
 from feature_transform import AnnFeatureTransform
+from goose_tools import get_prev_actions
 from oracle import get_next_observation, Oracle
-from qestimator import GooseNetGoogle
+from qestimator import GooseNetGoogle, GooseNetResidual4
 
 
 def test_get_next_observation_1():
@@ -147,23 +148,12 @@ def test_oracle_tell_best_action():
 
 
 def test_oracle_tell_best_action_2():
-    observation = Observation({
-        "remainingOverageTime": 60,
-        "step": 1,
-        "geese": [[31, 32], [69], [9], [36]],
-        "food": [11, 26],
-        "index": 0
-    })
+    prev_obs = Observation({'remainingOverageTime': 56.499099, 'index': 3, 'step': 59, 'geese': [[], [17, 6, 72, 61], [43, 54, 44, 45], [16, 15, 4]], 'food': [53, 46]})
 
-    prev_obs = Observation({
-        "remainingOverageTime": 60,
-        "step": 0,
-        "geese": [[32], [70], [75], [47]],
-        "food": [11, 31],
-        "index": 0
-    })
-    prev_actions = [Action(4), Action(4), Action(3), Action(1)]
-    depth = 4
+    observation = Observation({'remainingOverageTime': 56.499099, 'index': 3, 'step': 60, 'geese': [[], [28, 17, 6, 72], [42, 43, 54, 44], [5, 16, 15]], 'food': [53, 46]})
+
+    prev_actions = [Action(1), Action(3), Action(4), Action(1)]
+    depth = 2
 
     net_path = "../Champions/75000_GooseNetGoogle_c14_h7_w11_DQN.net"
     net = GooseNetGoogle()
@@ -171,7 +161,7 @@ def test_oracle_tell_best_action_2():
     oracle = Oracle(net, DeepQGeneratorStrategy(net, AnnFeatureTransform.get_state), AnnFeatureTransform.get_state,
                     AnnFeatureTransform.get_reward)
     actual_action = oracle.tell_best_action(observation, prev_obs, prev_actions, depth)
-    expected_action = Action(1)
+    expected_action = Action(3)
 
     return actual_action == expected_action
 
@@ -193,6 +183,7 @@ def run_tests():
         print("Error: Test 7 Oracle tell")
     if not test_oracle_tell_best_action_2():
         print("Error: Test 8 Oracle tell 2")
+
 
 if __name__ == "__main__":
     run_tests()

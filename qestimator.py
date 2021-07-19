@@ -304,10 +304,8 @@ class GooseNetGoogle(nn.Module):
                                     kernel_size=5, padding=0)
 
     def forward(self, x):
-        try:
-            x = F.relu(self.inception(x))
-        except Exception as e:
-            pass
+        x = F.relu(self.inception(x))
+
         north = x[:, :, 0:5, 3:8]
         east = torch.rot90(x[:, :, 1:6, 4:9], 1, [2, 3])
         south = torch.rot90(x[:, :, 2:7, 3:8], 2, [2, 3])

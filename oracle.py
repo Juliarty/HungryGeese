@@ -50,10 +50,18 @@ class OracleTreeNode:
             if get_risk_penalty is not None:
                 instant_reward += get_risk_penalty(next_obs, self.observation)
 
-            if is_observation_good(next_obs):
+            if is_observation_excellent(next_obs):
                 child = OracleTreeNode(self, next_obs, self.observation, agent_actions, self.accumulated_reward + instant_reward)
                 result.append(child)
         return result
+
+    def __str__(self):
+        d = {
+            "observation": self.observation,
+            "prev_obs": self.prev_obs,
+            "prev_actions": self.prev_actions
+        }
+        return str(d)
 
 
 class OracleTree:
@@ -73,19 +81,62 @@ class OracleTree:
     def get_best_action(self, get_state, q_estimator):
         if len(self.depth_to_peers[self.depth]) == 0:
             # take our best action, oracle can't help here
-            state = get_state(self.root.observation, self.root.prev_obs).unsqueeze(0)
-            action_index = int(q_estimator(state).max(1)[1].view(1)[0])
-            return Action(action_index + 1)
+            return self._get_not_bad_action(self.root.observation,
+                                            self.root.prev_obs,
+                                            self.root.prev_actions,
+                                            get_state,
+                                            q_estimator)
         best_node = None
         max_prediction = -100000
         for node in self.depth_to_peers[self.depth]:
             state = get_state(node.observation, node.parent.observation).unsqueeze(0)
-            prediction = float(node.accumulated_reward + q_estimator(state).max(1)[0].view(1)[0])
+            prediction = float(node.accumulated_reward + q_estimator(state).squeeze().max())
             if prediction > max_prediction:
                 best_node = node
                 max_prediction = prediction
-
+        print(self._take_second_parent(best_node))
         return self._take_second_parent(best_node).prev_actions[best_node.observation['index']]
+
+    def _get_not_bad_action(self, observation: Observation, prev_obs: Observation, prev_actions, get_state, q_estimator):
+        """
+        Choose save action (he neither commits suicide nor does kamikadze moves), but probably moves to positions
+        that are adjacent to other goose heads.
+        :param state:
+        :return:
+        """
+        # Don't move into any bodies
+        bodies = {position for goose in observation.geese for position in goose[:-1]}
+
+        position = observation.geese[observation.index][0]
+        bad_action_idx_list = [
+            action.value - 1 for action in Action
+            for new_position in [translate(position, action, configuration.columns, configuration.rows)]
+            if (new_position in bodies or (prev_actions is not None and action == prev_actions[observation.index].opposite()))]
+
+        opponents = [
+            goose
+            for index, goose in enumerate(observation.geese)
+            if index != observation.index and len(goose) > 0
+        ]
+
+        head_adjacent_positions = {
+            opponent_head_adjacent
+            for opponent in opponents
+            for opponent_head in [opponent[0]]
+            for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
+        }
+
+        risky_action_idx_list = [
+            action.value - 1 for action in Action
+            for new_position in [translate(position, action, configuration.columns, configuration.rows)]
+            if new_position in head_adjacent_positions]
+        state = get_state(observation, prev_obs)
+
+        q_values = q_estimator(state.unsqueeze(0)).squeeze()
+        q_values[bad_action_idx_list] = -10000
+        q_values[risky_action_idx_list] = -5000
+
+        return Action(int(q_values.max(0)[1]) + 1)
 
     def _take_second_parent(self, node: OracleTreeNode):
         while node.parent.parent is not None:
@@ -99,18 +150,41 @@ def get_next_observation(observation, agent_actions, prev_actions):
                         'step': observation.step + 1,
                         'remainingOverageTime': observation.remaining_overage_time,
                         'food': observation.food.copy(),
-                        'geese': []})
+                        'geese': [[], [], [], []]})
 
     starved = 0
     if next.step > 0 and next.step % 40 == 0:
         starved = 1
+
+    if len(observation.geese[observation.index]) == 0 \
+            or \
+            (prev_actions is not None and Action(prev_actions[observation.index]).value == Action(
+                agent_actions[observation.index]).opposite().value):  # suicide
+        next.geese[observation.index] = []
+    else:
+        next_head = translate(observation.geese[observation.index][0], agent_actions[observation.index], configuration.columns, configuration.rows)
+        # remove eaten food
+        ate = 1 if next_head in next.food else 0
+        if ate == 1:
+            next.food.remove(next_head)
+        # remove starved, do it in the end because they could hit someone before dead
+
+        next.geese[observation.index] = [next_head] + observation.geese[observation.index][0:-1]
+
+        if ate:
+            next.geese[observation.index] += [observation.geese[observation.index][-1]]
+        if starved:
+            next.geese[observation.index] = next.geese[observation.index][:-1]
+
     # move geese (they ate and starve)
     for i in range(len(observation.geese)):
+        if i == observation.index:
+            continue
         # already dead or took an opposite action
         if len(observation.geese[i]) == 0 \
                 or \
                 (prev_actions is not None and Action(prev_actions[i]).value == Action(agent_actions[i]).opposite().value):  # suicide
-            next.geese.append([])
+            next.geese[i] = []
             continue
 
         next_head = translate(observation.geese[i][0], agent_actions[i], configuration.columns, configuration.rows)
@@ -120,7 +194,7 @@ def get_next_observation(observation, agent_actions, prev_actions):
             next.food.remove(next_head)
         # remove starved, do it in the end because they could hit someone before dead
 
-        next.geese.append([next_head] + observation.geese[i][0:-1])
+        next.geese[i] = ([next_head] + observation.geese[i][0:-1])
 
         if ate:
             next.geese[i] += [observation.geese[i][-1]]
@@ -161,6 +235,40 @@ def is_observation_good(observation: Observation):
     result = True
     if len(observation.geese[observation.index]) == 0:
         result = False
+    return result
+
+
+# at least we survive, may be sth else
+def is_observation_excellent(observation: Observation):
+    result = True
+    if len(observation.geese[observation.index]) == 0:
+        return False
+    # remove risky position
+
+    head = observation.geese[observation.index][0]
+
+    opponents = [
+        goose
+        for index, goose in enumerate(observation.geese)
+        if index != observation.index and len(goose) > 0
+    ]
+
+    head_adjacent_positions = {
+        opponent_head_adjacent
+        for opponent in opponents
+        for opponent_head in [opponent[0]]
+        for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
+    }
+
+    head_head_adjacent_positions = {
+        position
+        for head_adjacent_position in head_adjacent_positions
+        for position in adjacent_positions(head_adjacent_position, configuration.columns, configuration.rows)
+    }
+
+    if head in head_adjacent_positions or head in head_head_adjacent_positions:
+        result = False
+
     return result
 
 

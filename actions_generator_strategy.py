@@ -1,3 +1,4 @@
+import itertools
 from abc import ABC, abstractmethod
 from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate
 
@@ -50,3 +51,37 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
             prev_obs['index'] = index
 
         return best_action
+
+
+class WideQGeneratorStrategy(AbstractActionsGeneratorStrategy):
+    def __init__(self, q_estimator, get_state):
+        self.q_estimator = q_estimator
+        self.get_state = get_state
+
+    # Takes all possible actions for our hero while taking best actions for his enemies
+    def get_actions(self, observation, prev_obs, prev_actions):
+        result = []
+        index_to_actions = {}
+        for i in range(len(observation.geese)):
+            if len(observation.geese[i]) == 0:
+                index_to_actions[i] = [Action(1)]
+                continue
+            prev_action = None if prev_actions is None else prev_actions[i]
+            index_to_actions[i] = [action for action in Action if action_is_not_suicide(action, observation, prev_action, i)]
+
+        for combination in itertools.product(*index_to_actions.values()):
+            result.append(combination)
+        return result
+
+
+def action_is_not_suicide(action, observation, prev_action, agent_index):
+    bodies = {position for goose in observation.geese for position in goose[:-1]}
+    columns = 11
+    rows = 7
+    position = observation.geese[agent_index][0]
+    bad_action_idx_list = [
+        action for action in Action
+        for new_position in [translate(position, action, columns, rows)]
+        if (new_position in bodies or (prev_action is not None and action == prev_action.opposite()))]
+
+    return action not in bad_action_idx_list

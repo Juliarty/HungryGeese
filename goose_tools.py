@@ -60,8 +60,6 @@ def get_prev_actions(observation: Observation, prev_obs: Observation):
             if head == translate(prev_head, action, configuration.columns, configuration.rows):
                 result.append(action)
 
-    try:
-        assert(len(result) == len(observation.geese))
-    except:
-        pass
+    assert(len(result) == len(observation.geese))
+
     return result
