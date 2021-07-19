@@ -1,6 +1,9 @@
 import itertools
 from abc import ABC, abstractmethod
-from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate
+from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate, \
+    GreedyAgent
+
+from goose_tools import get_prev_actions
 
 
 class AbstractActionsGeneratorStrategy(ABC):
@@ -11,6 +14,9 @@ class AbstractActionsGeneratorStrategy(ABC):
 
 
 class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
+    configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
+    greedy = GreedyAgent(configuration)
+
     def __init__(self, q_estimator, get_state):
         self.q_estimator = q_estimator
         self.get_state = get_state
@@ -23,7 +29,11 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
         for i in range(len(observation['geese'])):
             if i == observation['index']:
                 continue
-            enemy_actions[i] = self._get_best_action_for_enemy(observation, prev_obs, i)
+            if len(observation['geese'][i]) == 0:
+                enemy_actions[i] = Action(1)
+                continue
+            # enemy_actions[i] = self._get_best_action_for_enemy(observation, prev_obs, i)
+            enemy_actions[i] = self._get_greedy(observation, i)
 
         for action in Action:
             if prev_actions is not None and action.value == prev_actions[index].opposite().value:
@@ -44,13 +54,33 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
             prev_obs['index'] = enemy_index
 
         state = self.get_state(observation, prev_obs).unsqueeze(0)
-        best_action = Action(int(self.q_estimator(state).max(1)[1].view(1)[0]) + 1)
+        prev_action = None if prev_obs is None else get_prev_actions(observation, prev_obs)[enemy_index]
+        bad_actions = [action for action in Action if
+                       not action_is_not_suicide(action, observation, prev_action, enemy_index)]
+
+        q = self.q_estimator(state).squeeze()
+
+        for i in range(4):
+            if Action(i + 1) in bad_actions:
+                q[i] -= 10000
+
+        best_action = Action(int(q.max()[1]) + 1)
 
         observation['index'] = index
         if prev_obs is not None:
             prev_obs['index'] = index
 
         return best_action
+
+    def _get_greedy(self, observation, enemy_index):
+        observation = Observation(observation)
+        index = observation['index']
+
+        observation['index'] = enemy_index
+        action = self.greedy(observation)
+        observation['index'] = index
+
+        return Action({'NORTH': 1, 'EAST': 2, 'SOUTH': 3, 'WEST': 4}[action])
 
 
 class WideQGeneratorStrategy(AbstractActionsGeneratorStrategy):
@@ -67,7 +97,8 @@ class WideQGeneratorStrategy(AbstractActionsGeneratorStrategy):
                 index_to_actions[i] = [Action(1)]
                 continue
             prev_action = None if prev_actions is None else prev_actions[i]
-            index_to_actions[i] = [action for action in Action if action_is_not_suicide(action, observation, prev_action, i)]
+            index_to_actions[i] = [action for action in Action if
+                                   action_is_not_suicide(action, observation, prev_action, i)]
 
         for combination in itertools.product(*index_to_actions.values()):
             result.append(combination)

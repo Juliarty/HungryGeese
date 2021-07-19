@@ -1,5 +1,6 @@
 from kaggle_environments import make
-from kaggle_environments.envs.hungry_geese.hungry_geese import Observation, Configuration, Action, row_col, translate
+from kaggle_environments.envs.hungry_geese.hungry_geese import Observation, Configuration, Action, row_col, translate, \
+    adjacent_positions
 import numpy as np
 import math
 
@@ -63,3 +64,18 @@ def get_prev_actions(observation: Observation, prev_obs: Observation):
     assert(len(result) == len(observation.geese))
 
     return result
+
+
+def get_enemy_head_adjacent_positions(observation):
+    opponents = [
+        goose
+        for index, goose in enumerate(observation.geese)
+        if index != observation.index and len(goose) > 0
+    ]
+
+    return {
+        opponent_head_adjacent
+        for opponent in opponents
+        for opponent_head in [opponent[0]]
+        for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
+    }

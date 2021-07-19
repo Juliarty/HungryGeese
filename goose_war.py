@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from feature_transform import SimpleFeatureTransform, AnnFeatureTransform
 
-from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules, SmartGoose, GooseWarlock
+from goose_agents import GreedyAgent, AgentFactory, RLAgentWithRules, SmartGoose, GooseWarlock, GoosePaladin
 import matplotlib.pyplot as plt
 from qestimator import OneLayerNetQEstimator, AlexNetQEstimator, TwoLayerNetQEstimator, GooseNet4, GooseNet2, GooseNet3, \
     GooseNetResidual4, GooseNetGoogle
@@ -21,7 +21,7 @@ class GooseWar:
 
     def begin_each_one_vs_all(self, n_rounds):
         n = self.n_armies
-        fight_range = tqdm(range(n ** 2), desc='War has been sparked', leave=False)
+        fight_range = tqdm(range(n ** 2), desc='War has been sparked', leave=True)
         for i in fight_range:
             attacker = i // n
             defender = i % n
@@ -38,7 +38,7 @@ class GooseWar:
 
             scores = evaluate("hungry_geese",
                               [hero] + enemies,
-                              num_episodes=n_rounds, debug=False)
+                              num_episodes=n_rounds, debug=True)
 
             self.scores[i][j] = np.mean([get_points(sum(r[0] <= r_ for r_ in r if r_ is not None)) for r in scores])
 
@@ -125,7 +125,16 @@ if __name__ == "__main__":
     name_to_factory["Google Warlock"] = agent_factory
     ###
     ###
+    net_path = "./Champions/75000_GooseNetGoogle_c14_h7_w11_DQN.net"
+    net = GooseNetGoogle(n_channels=14)
+
+    net.load_state_dict(torch.load(net_path))
+    net.eval()
+    agent_factory = AgentFactory(net, GoosePaladin, AnnFeatureTransform.get_state)
+    name_to_factory["Google Paladin"] = agent_factory
+    ###
+    ###
     war = GooseWar(name_to_factory)
-    war.begin_each_one_vs_all(2)
+    war.begin_each_one_vs_all(4)
 
     war.show_scores()

@@ -193,7 +193,7 @@ class SmartGoose(AbstractAgent):
         return random.choice([i for i in range(4) if i != opposite_action])
 
 
-class GooseWarlock(AbstractAgent):
+class GoosePaladin(AbstractAgent):
     def __init__(self, net, get_state, eps_greedy):
         super().__init__(net=net,
                          get_state=get_state,
@@ -211,6 +211,34 @@ class GooseWarlock(AbstractAgent):
         observation = Observation(observation)
         self.prev_actions = get_prev_actions(observation, self.prev_observation)
         action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=1)
+
+        self.prev_observation = observation
+
+        return action.name
+
+    def reset(self):
+        self.prev_observation = None
+        self.prev_actions = None
+
+
+class GooseWarlock(AbstractAgent):
+    def __init__(self, net, get_state, eps_greedy):
+        super().__init__(net=net,
+                         get_state=get_state,
+
+                         eps_greedy=eps_greedy)
+        self.prev_observation = None
+        self.prev_actions = None
+        self.eps = eps_greedy
+        self.oracle = Oracle(net, DeepQGeneratorStrategy(net, get_state), get_state, AnnFeatureTransform.get_reward)
+
+    def __call__(self, observation,  configuration):
+        if observation.step == 0:
+            self.reset()
+        self.net.eval()
+        observation = Observation(observation)
+        self.prev_actions = get_prev_actions(observation, self.prev_observation)
+        action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=3)
 
         self.prev_observation = observation
 

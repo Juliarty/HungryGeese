@@ -4,11 +4,13 @@
 #       b. Выбрать все движения за врагов, обрезать хвосты
 #       c. Добавить ход к дереву
 #       d. Повторить n_steps - 1 h раз
+import random
 
 from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate, \
     adjacent_positions
 
 from actions_generator_strategy import AbstractActionsGeneratorStrategy
+from goose_tools import get_enemy_head_adjacent_positions
 
 configuration = Configuration({"rows": 7, "columns": 11, 'hunger_rate': 40, 'episodeSteps': 200})
 
@@ -40,7 +42,8 @@ class OracleTreeNode:
         self.prev_obs = prev_obs
         self.prev_actions = prev_actions
 
-    def generate_children(self, action_generator_strategy: AbstractActionsGeneratorStrategy, get_reward, get_risk_penalty=None):
+    def generate_children(self, action_generator_strategy: AbstractActionsGeneratorStrategy, get_reward,
+                          get_risk_penalty=None):
         result = []
         agent_actions_list = action_generator_strategy.get_actions(self.observation, self.prev_obs, self.prev_actions)
         for agent_actions in agent_actions_list:
@@ -51,7 +54,8 @@ class OracleTreeNode:
                 instant_reward += get_risk_penalty(next_obs, self.observation)
 
             if is_observation_excellent(next_obs):
-                child = OracleTreeNode(self, next_obs, self.observation, agent_actions, self.accumulated_reward + instant_reward)
+                child = OracleTreeNode(self, next_obs, self.observation, agent_actions,
+                                       self.accumulated_reward + instant_reward)
                 result.append(child)
         return result
 
@@ -97,7 +101,8 @@ class OracleTree:
         print(self._take_second_parent(best_node))
         return self._take_second_parent(best_node).prev_actions[best_node.observation['index']]
 
-    def _get_not_bad_action(self, observation: Observation, prev_obs: Observation, prev_actions, get_state, q_estimator):
+    def _get_not_bad_action(self, observation: Observation, prev_obs: Observation, prev_actions, get_state,
+                            q_estimator):
         """
         Choose save action (he neither commits suicide nor does kamikadze moves), but probably moves to positions
         that are adjacent to other goose heads.
@@ -111,21 +116,10 @@ class OracleTree:
         bad_action_idx_list = [
             action.value - 1 for action in Action
             for new_position in [translate(position, action, configuration.columns, configuration.rows)]
-            if (new_position in bodies or (prev_actions is not None and action == prev_actions[observation.index].opposite()))]
+            if (new_position in bodies or (
+                        prev_actions is not None and action == prev_actions[observation.index].opposite()))]
 
-        opponents = [
-            goose
-            for index, goose in enumerate(observation.geese)
-            if index != observation.index and len(goose) > 0
-        ]
-
-        head_adjacent_positions = {
-            opponent_head_adjacent
-            for opponent in opponents
-            for opponent_head in [opponent[0]]
-            for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
-        }
-
+        head_adjacent_positions = get_enemy_head_adjacent_positions(observation)
         risky_action_idx_list = [
             action.value - 1 for action in Action
             for new_position in [translate(position, action, configuration.columns, configuration.rows)]
@@ -156,13 +150,12 @@ def get_next_observation(observation, agent_actions, prev_actions):
     if next.step > 0 and next.step % 40 == 0:
         starved = 1
 
-    if len(observation.geese[observation.index]) == 0 \
-            or \
-            (prev_actions is not None and Action(prev_actions[observation.index]).value == Action(
-                agent_actions[observation.index]).opposite().value):  # suicide
+    if len(observation.geese[observation.index]) == 0 or \
+        (prev_actions is not None and prev_actions[observation.index] == agent_actions[observation.index].opposite()):  # suicide
         next.geese[observation.index] = []
     else:
-        next_head = translate(observation.geese[observation.index][0], agent_actions[observation.index], configuration.columns, configuration.rows)
+        next_head = translate(observation.geese[observation.index][0], agent_actions[observation.index],
+                              configuration.columns, configuration.rows)
         # remove eaten food
         ate = 1 if next_head in next.food else 0
         if ate == 1:
@@ -181,9 +174,8 @@ def get_next_observation(observation, agent_actions, prev_actions):
         if i == observation.index:
             continue
         # already dead or took an opposite action
-        if len(observation.geese[i]) == 0 \
-                or \
-                (prev_actions is not None and Action(prev_actions[i]).value == Action(agent_actions[i]).opposite().value):  # suicide
+        if len(observation.geese[i]) == 0 or \
+                (prev_actions is not None and prev_actions[i] == agent_actions[i].opposite()):  # suicide
             next.geese[i] = []
             continue
 
@@ -223,9 +215,12 @@ def get_next_observation(observation, agent_actions, prev_actions):
         for j in range(len(next.geese)):
             if len(next.geese[j]) == 0:
                 continue
-            if next.geese[i][0] in next.geese[j][1:]:   # we already checked head collisions
+            if next.geese[i][0] in next.geese[j][1:]:  # we already checked head collisions
                 next.geese[i] = []
                 break
+
+    if len(next.food) == 0:
+        next.food.append(random.choice(range(76)))
 
     return next
 
@@ -244,28 +239,14 @@ def is_observation_excellent(observation: Observation):
     if len(observation.geese[observation.index]) == 0:
         return False
     # remove risky position
-
-    head = observation.geese[observation.index][0]
-
-    opponents = [
-        goose
-        for index, goose in enumerate(observation.geese)
-        if index != observation.index and len(goose) > 0
-    ]
-
-    head_adjacent_positions = {
-        opponent_head_adjacent
-        for opponent in opponents
-        for opponent_head in [opponent[0]]
-        for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
-    }
-
+    head_adjacent_positions = get_enemy_head_adjacent_positions(observation)
     head_head_adjacent_positions = {
         position
         for head_adjacent_position in head_adjacent_positions
         for position in adjacent_positions(head_adjacent_position, configuration.columns, configuration.rows)
     }
 
+    head = observation.geese[observation.index][0]
     if head in head_adjacent_positions or head in head_head_adjacent_positions:
         result = False
 
@@ -274,22 +255,22 @@ def is_observation_excellent(observation: Observation):
 
 def get_risk_penalty(observation, prev_obs):
     if len(observation.geese[observation.index]) == 0:
-        return 0
+        return 0    # there is no penalty for dead...
 
-    opponents = [
-        goose
-        for index, goose in enumerate(prev_obs.geese)
-        if index != prev_obs.index and len(goose) > 0
-    ]
-
-    head_adjacent_positions = {
-        opponent_head_adjacent
-        for opponent in opponents if len(opponent) > 0
-        for opponent_head in [opponent[0]]
-        for opponent_head_adjacent in adjacent_positions(opponent_head, configuration.columns, configuration.rows)
-    }
-
+    # collisions
+    head_adjacent_positions = get_enemy_head_adjacent_positions(prev_obs)
     if observation.geese[observation.index][0] in head_adjacent_positions:
         return -1
+
+    # attempts to catch the tail of an eating goose
+    for i in range(len(observation.geese)):
+        if i == observation.index or len(observation.geese[i]) == 0:
+            continue
+        if observation.geese[i] not in observation.food:
+            continue
+        head = observation.geese[observation.index][0]
+        prev_enemy_tail = prev_obs.geese[i][-1]
+        if prev_enemy_tail == head:
+            return -1
 
     return 0
