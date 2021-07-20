@@ -24,7 +24,7 @@ def test_get_next_observation_1():
                                         'food': [3, 4],
                                         'geese': [[49, 48], [44, 33], [28, 27], [69]]})
 
-    return expected_observation == actual_observation
+    return expected_observation['geese'] == actual_observation['geese']
 
 
 def test_get_next_observation_2_food():
@@ -43,7 +43,7 @@ def test_get_next_observation_2_food():
                                         'food': [3],
                                         'geese': [[49, 48, 47], [44, 33], [28, 27], [69]]})
 
-    return expected_observation == actual_observation
+    return expected_observation['geese'] == actual_observation['geese']
 
 
 def test_get_next_observation_3_collision():
@@ -61,7 +61,7 @@ def test_get_next_observation_3_collision():
                                         'food': [3],
                                         'geese': [[], [], [28, 27], [69]]})
 
-    return expected_observation == actual_observation
+    return expected_observation['geese'] == actual_observation['geese']
 
 
 def test_get_next_observation_4_body_hit():
@@ -79,7 +79,7 @@ def test_get_next_observation_4_body_hit():
                                         'food': [3],
                                         'geese': [[], [72, 61, 50], [28, 27], [69]]})
 
-    return expected_observation == actual_observation
+    return expected_observation['geese'] == actual_observation['geese']
 
 
 def test_get_next_observation_5_body_hit():
@@ -97,7 +97,7 @@ def test_get_next_observation_5_body_hit():
                                         'food': [3],
                                         'geese': [[], [72, 61, 50], [28, 27], [69]]})
 
-    return expected_observation == actual_observation
+    return expected_observation['geese'] == actual_observation['geese']
 
 
 def test_get_next_observation_6_opposite_action():
@@ -115,7 +115,19 @@ def test_get_next_observation_6_opposite_action():
                                         'food': [3],
                                         'geese': [[], [], [], []]})
 
-    return expected_observation == actual_observation
+    return expected_observation['geese'] == actual_observation['geese']
+
+
+def test_get_next_observation_7():
+    expected_observation = {'remainingOverageTime': 60, 'step': 75,
+                            'geese': [[], [7, 6], [36], []], 'food': [48], 'index': 0}
+    observation = {'remainingOverageTime': 60, 'step': 74,
+                   'geese': [[17], [6], [47], [61]], 'food': [48, 7], 'index': 0}
+
+    agent_actions = [Action.NORTH, Action.EAST, Action.NORTH, Action.NORTH]
+    prev_actions = [Action.EAST, Action.EAST, Action.NORTH, Action.SOUTH]
+    actual_observation = get_next_observation(observation, agent_actions, prev_actions)
+    return expected_observation['geese'] == actual_observation['geese']
 
 
 # the bad situation, guy tries to survive by moving to the enemy tail that will eat food next step...
@@ -142,15 +154,17 @@ def test_oracle_tell_best_action():
     oracle = Oracle(net, DeepQGeneratorStrategy(net, AnnFeatureTransform.get_state), AnnFeatureTransform.get_state,
                     AnnFeatureTransform.get_reward)
     actual_action = oracle.tell_best_action(observation, prev_obs, prev_actions, depth)
-    expected_action = Action(1)
+    expected_action = Action(4)
 
     return actual_action == expected_action
 
 
 def test_oracle_tell_best_action_2():
-    prev_obs = Observation({'remainingOverageTime': 56.499099, 'index': 3, 'step': 59, 'geese': [[], [17, 6, 72, 61], [43, 54, 44, 45], [16, 15, 4]], 'food': [53, 46]})
+    prev_obs = Observation({'remainingOverageTime': 56.499099, 'index': 3, 'step': 59,
+                            'geese': [[], [17, 6, 72, 61], [43, 54, 44, 45], [16, 15, 4]], 'food': [53, 46]})
 
-    observation = Observation({'remainingOverageTime': 56.499099, 'index': 3, 'step': 60, 'geese': [[], [28, 17, 6, 72], [42, 43, 54, 44], [5, 16, 15]], 'food': [53, 46]})
+    observation = Observation({'remainingOverageTime': 56.499099, 'index': 3, 'step': 60,
+                               'geese': [[], [28, 17, 6, 72], [42, 43, 54, 44], [5, 16, 15]], 'food': [53, 46]})
 
     prev_actions = [Action(1), Action(3), Action(4), Action(1)]
     depth = 2
@@ -161,7 +175,7 @@ def test_oracle_tell_best_action_2():
     oracle = Oracle(net, DeepQGeneratorStrategy(net, AnnFeatureTransform.get_state), AnnFeatureTransform.get_state,
                     AnnFeatureTransform.get_reward)
     actual_action = oracle.tell_best_action(observation, prev_obs, prev_actions, depth)
-    expected_action = Action(3)
+    expected_action = Action(2)
 
     return actual_action == expected_action
 
@@ -183,6 +197,9 @@ def run_tests():
         print("Error: Test 7 Oracle tell")
     if not test_oracle_tell_best_action_2():
         print("Error: Test 8 Oracle tell 2")
+
+    if not test_get_next_observation_7():
+        print("Error Test 9 Get next observation")
 
 
 if __name__ == "__main__":

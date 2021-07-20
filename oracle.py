@@ -1,6 +1,8 @@
 import random
 
 from kaggle_environments.envs.hungry_geese.hungry_geese import Action, Configuration, Observation, translate
+from kaggle_environments.helpers import histogram
+
 from actions_generator_strategy import AbstractActionsGeneratorStrategy
 from goose_tools import get_enemy_head_adjacent_positions
 
@@ -121,7 +123,6 @@ class OracleTree:
         q_values = q_estimator(state.unsqueeze(0)).squeeze()
         q_values[bad_action_idx_list] = -10000
         q_values[risky_action_idx_list] = -5000
-
         return Action(int(q_values.max(0)[1]) + 1)
 
     def _take_second_parent(self, node: OracleTreeNode):
@@ -130,91 +131,70 @@ class OracleTree:
         return node
 
 
-def get_next_observation(observation, agent_actions, prev_actions):
-    observation = Observation(observation)
-    next = Observation({'index': observation.index,
-                        'step': observation.step + 1,
-                        'remainingOverageTime': observation.remaining_overage_time,
-                        'food': observation.food.copy(),
-                        'geese': [[], [], [], []]})
-
-    starved = 0
-    if next.step > 0 and next.step % 40 == 0:
-        starved = 1
-
-    if len(observation.geese[observation.index]) == 0 or \
-        (prev_actions is not None and prev_actions[observation.index] == agent_actions[observation.index].opposite()):  # suicide
-        next.geese[observation.index] = []
-    else:
-        next_head = translate(observation.geese[observation.index][0], agent_actions[observation.index],
-                              configuration.columns, configuration.rows)
-        # remove eaten food
-        ate = 1 if next_head in next.food else 0
-        if ate == 1:
-            next.food.remove(next_head)
-        # remove starved, do it in the end because they could hit someone before dead
-
-        next.geese[observation.index] = [next_head] + observation.geese[observation.index][0:-1]
-
-        if ate:
-            next.geese[observation.index] += [observation.geese[observation.index][-1]]
-        if starved:
-            next.geese[observation.index] = next.geese[observation.index][:-1]
-
-    # move geese (they ate and starve)
-    for i in range(len(observation.geese)):
-        if i == observation.index:
-            continue
-        # already dead or took an opposite action
-        if len(observation.geese[i]) == 0 or \
-                (prev_actions is not None and prev_actions[i] == agent_actions[i].opposite()):  # suicide
-            next.geese[i] = []
-            continue
-
-        next_head = translate(observation.geese[i][0], agent_actions[i], configuration.columns, configuration.rows)
-        # remove eaten food
-        ate = 1 if next_head in next.food else 0
-        if ate == 1:
-            next.food.remove(next_head)
-        # remove starved, do it in the end because they could hit someone before dead
-
-        next.geese[i] = ([next_head] + observation.geese[i][0:-1])
-
-        if ate:
-            next.geese[i] += [observation.geese[i][-1]]
-        if starved:
-            next.geese[i] = next.geese[i][:-1]
-
-    # remove dead bodies
-    # remove collided
-    for i in range(len(next.geese)):
-        if len(next.geese[i]) == 0:
-            continue
-        collided = False
-        for j in range(i + 1, len(next.geese)):
-            if len(next.geese[j]) == 0:
-                continue
-            if next.geese[i][0] == next.geese[j][0]:
-                next.geese[j] = []
-                collided = True
-        if collided:
-            next.geese[i] = []
-    # remove body hit:
-    for i in range(len(next.geese)):
-        if len(next.geese[i]) == 0:
-            continue
-        # we also consider self collision
-        for j in range(len(next.geese)):
-            if len(next.geese[j]) == 0:
-                continue
-            if next.geese[i][0] in next.geese[j][1:]:  # we already checked head collisions
-                next.geese[i] = []
-                break
-
-    if len(next.food) == 0:
-        next.food.append(random.choice(range(76)))
-
-    return next
+# def get_next_observation(observation, agent_actions, prev_actions):
+#     observation = Observation(observation)
+#     next = Observation({'index': observation.index,
+#                         'step': observation.step + 1,
+#                         'remainingOverageTime': observation.remaining_overage_time,
+#                         'food': observation.food.copy(),
+#                         'geese': [[], [], [], []]})
+#
+#     starved = 0
+#     if next.step > 0 and next.step % 40 == 0:
+#         starved = 1
+#
+#     # move geese (they ate and starve)
+#     for i in range(len(observation.geese)):
+#         # already dead or took an opposite action
+#         if len(observation.geese[i]) == 0 or \
+#                 (prev_actions is not None and prev_actions[i] == agent_actions[i].opposite() and len(observation.geese[i]) )> 1:  # suicide
+#             next.geese[i] = []
+#             continue
+#
+#         next_head = translate(observation.geese[i][0], agent_actions[i], configuration.columns, configuration.rows)
+#         # remove eaten food
+#         ate = 1 if next_head in next.food else 0
+#         if ate == 1:
+#             next.food.remove(next_head)
+#         # remove starved, do it in the end because they could hit someone before dead
+#
+#         next.geese[i] = ([next_head] + observation.geese[i][0:-1])
+#
+#         if ate:
+#             next.geese[i] += [observation.geese[i][-1]]
+#         if starved:
+#             next.geese[i] = next.geese[i][:-1]
+#
+#     # remove dead bodies
+#     # remove collided
+#     for i in range(len(next.geese)):
+#         if len(next.geese[i]) == 0:
+#             continue
+#         collided = False
+#         for j in range(i + 1, len(next.geese)):
+#             if len(next.geese[j]) == 0:
+#                 continue
+#             if next.geese[i][0] == next.geese[j][0]:
+#                 next.geese[j] = []
+#                 collided = True
+#         if collided:
+#             next.geese[i] = []
+#     # remove body hit:
+#     for i in range(len(next.geese)):
+#         if len(next.geese[i]) == 0:
+#             continue
+#         # we also consider self collision
+#         for j in range(len(next.geese)):
+#             if len(next.geese[j]) == 0:
+#                 continue
+#             if next.geese[i][0] in next.geese[j][1:]:  # we already checked head collisions
+#                 next.geese[i] = []
+#                 break
+#
+#     if len(next.food) == 0:
+#         next.food.append(random.choice(range(76)))
+#
+#     return next
 
 
 def get_risk_penalty(observation, prev_obs):
@@ -235,6 +215,98 @@ def get_risk_penalty(observation, prev_obs):
         head = observation.geese[observation.index][0]
         prev_enemy_tail = prev_obs.geese[i][-1]
         if prev_enemy_tail == head:
+            print("penalty")
             return -1
 
     return 0
+
+
+def get_next_observation(observation, actions, prev_actions):
+    rows = configuration.rows
+    columns = configuration.columns
+    next = Observation(observation.copy())
+    next['step'] += 1
+    geese = [goose[:] for goose in next.geese]
+    food = next.food.copy()
+    next['geese'] = geese
+    next['food'] = food
+    # If there is no last state, reuse current state so that current action is never the opposite of the last action.
+    # Apply the actions from active agents.
+    for index in range(len(next.geese)):
+        # if agent.status != "ACTIVE":
+        #     if agent.status != "INACTIVE" and agent.status != "DONE":
+        #         # ERROR, INVALID, or TIMEOUT, remove the goose.
+        #         geese[index] = []
+        #     continue
+        if len(geese[index]) == 0:
+            continue
+
+        action = actions[index]
+
+        # Check action direction
+        if prev_actions is not None and prev_actions[index] == action.opposite():
+            # agent.status = "DONE"
+            geese[index] = []
+            continue
+
+        goose = geese[index]
+        head = translate(goose[0], action, columns, rows)
+
+        # Consume food or drop a tail piece.
+        if head in food:
+            food.remove(head)
+        else:
+            goose.pop()
+
+        # Self collision.
+        if head in goose:
+            # env.debug_print(f"Body Hit: {agent.observation.index, action, head, goose}")
+            # agent.status = "DONE"
+            geese[index] = []
+            continue
+
+        # while len(goose) >= configuration.max_length:
+        #     # Free a spot for the new head if needed
+        #     goose.pop()
+        # Add New Head to the Goose.
+        goose.insert(0, head)
+
+        # If hunger strikes remove from the tail.
+        if next.step % configuration.hunger_rate == 0:
+            if len(goose) > 0:
+                goose.pop()
+            if len(goose) == 0:
+                # env.debug_print(f"Goose Starved: {action}")
+                # agent.status = "DONE"
+                continue
+
+    goose_positions = histogram(
+        position
+        for goose in geese
+        for position in goose
+    )
+
+    # Check for collisions.
+    for index in range(len(next.geese)):
+        goose = geese[index]
+        if len(goose) > 0:
+            head = geese[index][0]
+            if goose_positions[head] > 1:
+                # env.debug_print(f"Goose Collision: {agent.action}")
+                # agent.status = "DONE"
+                geese[index] = []
+
+    # Add food if min_food threshold reached.
+    needed_food = 2 - len(food)
+    if needed_food > 0:
+        collisions = {
+            position
+            for goose in geese
+            for position in goose
+        }
+        available_positions = set(range(rows * columns)).difference(collisions).difference(food)
+        # Ensure we don't sample more food than available positions.
+        needed_food = min(needed_food, len(available_positions))
+        food.extend(random.sample(available_positions, needed_food))
+
+    return next

@@ -20,9 +20,9 @@ class AbstractActionsGeneratorStrategy(ABC):
 
 
 class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
-    greedy = GreedyAgent(configuration)
 
     def __init__(self, q_estimator, get_state):
+        self.greedy = [GreedyAgent(configuration) for _ in range(4)]
         self.q_estimator = q_estimator
         self.get_state = get_state
 
@@ -41,7 +41,7 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
             enemy_actions[i] = self._get_greedy(observation, i)
 
         for action in Action:
-            if prev_actions is not None and action.value == prev_actions[index].opposite().value:
+            if prev_actions is not None and action == prev_actions[index].opposite():
                 continue
             actions = enemy_actions.copy()
             actions[index] = action
@@ -89,7 +89,7 @@ class DeepQGeneratorStrategy(AbstractActionsGeneratorStrategy):
         index = observation['index']
 
         observation['index'] = enemy_index
-        action = self.greedy(observation)
+        action = self.greedy[enemy_index](observation)
         observation['index'] = index
 
         return Action({'NORTH': 1, 'EAST': 2, 'SOUTH': 3, 'WEST': 4}[action])

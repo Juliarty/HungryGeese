@@ -238,7 +238,7 @@ class GooseWarlock(AbstractAgent):
         self.net.eval()
         observation = Observation(observation)
         self.prev_actions = get_prev_actions(observation, self.prev_observation)
-        action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=3)
+        action = self.oracle.tell_best_action(observation, self.prev_observation, self.prev_actions, depth=1)
 
         self.prev_observation = observation
 
